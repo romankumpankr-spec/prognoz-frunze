@@ -2,15 +2,36 @@
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "../../lib/supabase/client";
+
+function authEmail(nickname: string) {
+  return `${nickname.trim().toLowerCase()}@prognoz-frunze.local`;
+}
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
+  const [nickname, setNickname] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setMessage("Авторизация будет подключена через Supabase. Сначала настроим базу и аккаунты участников.");
+    setMessage("");
+    setLoading(true);
+    const supabase = createClient();
+    const { error } = await supabase.auth.signInWithPassword({
+      email: authEmail(nickname),
+      password,
+    });
+    setLoading(false);
+    if (error) {
+      setMessage("Неверный ник или пароль.");
+      return;
+    }
+    router.push("/dashboard");
+    router.refresh();
   }
 
   return (
@@ -19,17 +40,19 @@ export default function LoginPage() {
         <div className="login card">
           <Link className="badge" href="/">← На главную</Link>
           <h1>Вход в кабинет</h1>
-          <p className="badge">Ваши прогнозы видите только вы до публикации результатов.</p>
+          <p className="badge">Вход по нику и паролю. Email участникам не нужен.</p>
           <form className="form" onSubmit={submit}>
             <label>
-              <span className="badge">Email</span>
-              <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+              <span className="badge">Ник</span>
+              <input className="input" type="text" value={nickname} onChange={(e) => setNickname(e.target.value)} autoComplete="username" required />
             </label>
             <label>
               <span className="badge">Пароль</span>
-              <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+              <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
             </label>
-            <button className="cta" type="submit" style={{ border: 0, cursor: "pointer", justifyContent: "center" }}>Войти</button>
+            <button className="cta" type="submit" disabled={loading} style={{ border: 0, cursor: loading ? "wait" : "pointer", justifyContent: "center" }}>
+              {loading ? "Входим…" : "Войти"}
+            </button>
           </form>
           {message && <p className="badge" style={{ marginTop: 16 }}>{message}</p>}
         </div>
