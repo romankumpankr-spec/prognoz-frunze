@@ -1,0 +1,2 @@
+-- Placeholder for subsequent additive migrations.
+-- Keep production data in Supabase; do not hard-code match results into the app.
