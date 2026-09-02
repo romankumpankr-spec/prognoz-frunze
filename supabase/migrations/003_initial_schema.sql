@@ -1,0 +1,2 @@
+-- Database schema is intentionally kept in migrations so deployments do not erase data.
+-- The canonical first schema is being prepared before connecting this repository to the Supabase project.
