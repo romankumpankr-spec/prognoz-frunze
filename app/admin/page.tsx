@@ -6,12 +6,14 @@ import { createClient } from "../../lib/supabase/client";
 
 type Round = { id: string; name: string; sort_order: number };
 type Match = { id: string; round_id: string; home_team: string; away_team: string; kickoff_at: string; home_score: number | null; away_score: number | null };
+type Participant = { id: string; display_name: string; role: "player" | "admin" };
 
 export default function AdminPage() {
   const supabase = createClient();
   const router = useRouter();
   const [rounds, setRounds] = useState<Round[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
+  const [participants, setParticipants] = useState<Participant[]>([]);
   const [allowed, setAllowed] = useState(false);
   const [roundName, setRoundName] = useState("");
   const [home, setHome] = useState("");
@@ -26,11 +28,12 @@ export default function AdminPage() {
     const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
     if (profile?.role !== "admin") return router.replace("/dashboard");
     setAllowed(true);
-    const [{ data: rs }, { data: ms }] = await Promise.all([
+    const [{ data: rs }, { data: ms }, { data: ps }] = await Promise.all([
       supabase.from("rounds").select("id,name,sort_order").order("sort_order"),
       supabase.from("matches").select("id,round_id,home_team,away_team,kickoff_at,home_score,away_score").order("kickoff_at"),
+      supabase.from("profiles").select("id,display_name,role").order("display_name"),
     ]);
-    setRounds(rs ?? []); setMatches(ms ?? []);
+    setRounds(rs ?? []); setMatches(ms ?? []); setParticipants(ps ?? []);
     if (!roundId && rs?.[0]) setRoundId(rs[0].id);
   }
   useEffect(() => { load(); // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -66,6 +69,9 @@ export default function AdminPage() {
     <header className="header"><div className="logo">ПРОГНОЗ<span>-ФРУНЗЕ</span></div><button className="badge" onClick={() => router.push("/dashboard")} style={{background:"none",border:0,cursor:"pointer"}}>← В кабинет</button></header>
     <h1>Панель администратора</h1>
     <p className="badge">Добавляйте туры и матчи. После окончания матча внесите фактический счёт — система сама начислит 3 / 2 / 1 очко.</p>
+
+    <section className="card" style={{marginTop:20}}><h2 style={{marginTop:0}}>Участники</h2><div style={{display:"grid",gap:8}}>{participants.map((p,i)=><div key={p.id} style={{display:"grid",gridTemplateColumns:"32px 1fr auto",gap:8,alignItems:"center",padding:"9px 0",borderBottom:i===participants.length-1?"none":"1px solid var(--border)"}}><b>{i+1}</b><span>{p.display_name}</span><span className="badge">{p.role === "admin" ? "Администратор" : "Участник"}</span></div>)}</div></section>
+
     <div className="grid" style={{gridTemplateColumns:"1fr 1fr",marginTop:20}}>
       <form className="card form" onSubmit={addRound}><h2>Новый тур</h2><input className="input" placeholder="Например: Тур 1" value={roundName} onChange={e=>setRoundName(e.target.value)} required/><button className="cta" type="submit" style={{border:0,cursor:"pointer",marginTop:0}}>Добавить тур</button></form>
       <form className="card form" onSubmit={addMatch}><h2>Новый матч</h2><select className="input" value={roundId} onChange={e=>setRoundId(e.target.value)} required><option value="">Выберите тур</option>{rounds.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select><input className="input" placeholder="Хозяева" value={home} onChange={e=>setHome(e.target.value)} required/><input className="input" placeholder="Гости" value={away} onChange={e=>setAway(e.target.value)} required/><input className="input" type="datetime-local" value={kickoff} onChange={e=>setKickoff(e.target.value)} required/><button className="cta" type="submit" style={{border:0,cursor:"pointer",marginTop:0}}>Добавить матч</button></form>
