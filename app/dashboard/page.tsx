@@ -18,19 +18,35 @@ export default function DashboardPage() {
   const [profile, setProfile] = useState<Profile | null>(null); const [userId, setUserId] = useState("");
   const [matches, setMatches] = useState<Match[]>([]); const [predictions, setPredictions] = useState<Record<string, Prediction>>({}); const [results, setResults] = useState<Record<string, PredictionResult>>({});
   const [messages, setMessages] = useState<Message[]>([]); const [names, setNames] = useState<Record<string, string>>({}); const [standings, setStandings] = useState<Standing[]>([]);
-  const [message, setMessage] = useState(""); const [status, setStatus] = useState("");
+  const [message, setMessage] = useState(""); const [status, setStatus] = useState(""); const [loadError, setLoadError] = useState("");
 
   async function load() {
-    const { data: { user } } = await supabase.auth.getUser(); if (!user) { router.replace("/login"); return; }
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError) { setLoadError(`Ошибка авторизации: ${userError.message}`); return; }
+    if (!user) { router.replace("/login"); return; }
     setUserId(user.id);
-    const [{ data: p }, { data: ms }, { data: ps }, { data: prs }, { data: chat }, { data: st }] = await Promise.all([
-      supabase.from("profiles").select("display_name, role").eq("id", user.id).single(),
-      supabase.from("matches").select("id, home_team, away_team, kickoff_at, home_score, away_score").order("kickoff_at"),
-      supabase.from("predictions").select("match_id, home_score, away_score").eq("user_id", user.id),
-      supabase.from("prediction_results").select("match_id, points").eq("user_id", user.id),
-      supabase.from("chat_messages").select("id, user_id, body, created_at").order("created_at", { ascending: true }).limit(100),
-      supabase.from("standings").select("user_id, display_name, points, scored_matches").order("points", { ascending: false }).order("display_name"),
+
+    const profileQuery = supabase.from("profiles").select("display_name, role").eq("id", user.id).single();
+    const matchesQuery = supabase.from("matches").select("id, home_team, away_team, kickoff_at, home_score, away_score").order("kickoff_at");
+    const predictionsQuery = supabase.from("predictions").select("match_id, home_score, away_score").eq("user_id", user.id);
+    const resultsQuery = supabase.from("prediction_results").select("match_id, points").eq("user_id", user.id);
+    const chatQuery = supabase.from("chat_messages").select("id, user_id, body, created_at").order("created_at", { ascending: true }).limit(100);
+    const standingsQuery = supabase.from("standings").select("user_id, display_name, points, scored_matches").order("points", { ascending: false }).order("display_name");
+
+    const [{ data: p, error: pe }, { data: ms, error: me }, { data: ps, error: pse }, { data: prs, error: pre }, { data: chat, error: ce }, { data: st, error: se }] = await Promise.all([
+      profileQuery, matchesQuery, predictionsQuery, resultsQuery, chatQuery, standingsQuery,
     ]);
+
+    const errors = [
+      pe && `профиль: ${pe.message}`,
+      me && `матчи: ${me.message}`,
+      pse && `прогнозы: ${pse.message}`,
+      pre && `результаты: ${pre.message}`,
+      ce && `чат: ${ce.message}`,
+      se && `таблица: ${se.message}`,
+    ].filter(Boolean) as string[];
+    setLoadError(errors.length ? errors.join(" | ") : "");
+
     setProfile(p ?? null); setMatches(ms ?? []); setStandings(st ?? []);
     const map: Record<string, Prediction> = {}; for (const x of ps ?? []) map[x.match_id] = x; setPredictions(map);
     const resultMap: Record<string, PredictionResult> = {}; for (const x of prs ?? []) resultMap[x.match_id] = x; setResults(resultMap);
@@ -44,13 +60,14 @@ export default function DashboardPage() {
   async function savePrediction(match: Match) {
     const value=predictions[match.id]; if(!value) return;
     const {error}=await supabase.from("predictions").upsert({match_id:match.id,user_id:userId,home_score:value.home_score,away_score:value.away_score},{onConflict:"match_id,user_id"});
-    setStatus(error?"Не удалось сохранить прогноз.":"Прогноз сохранён."); setTimeout(()=>setStatus(""),2500);
+    setStatus(error?`Не удалось сохранить прогноз: ${error.message}`:"Прогноз сохранён."); setTimeout(()=>setStatus(""),2500);
   }
-  async function sendMessage(e:FormEvent){e.preventDefault(); const body=message.trim(); if(!body)return; const {error}=await supabase.from("chat_messages").insert({user_id:userId,body}); if(!error)setMessage("");}
+  async function sendMessage(e:FormEvent){e.preventDefault(); const body=message.trim(); if(!body)return; const {error}=await supabase.from("chat_messages").insert({user_id:userId,body}); if(!error)setMessage(""); else setStatus(`Не удалось отправить сообщение: ${error.message}`);}
   async function logout(){await supabase.auth.signOut();router.replace("/");}
 
   return <main className="page"><div className="container">
     <header className="header"><div className="logo">ПРОГНОЗ<span>-ФРУНЗЕ</span></div><div style={{display:"flex",gap:12,alignItems:"center"}}><span className="badge">{profile?.display_name ?? "Участник"}{profile?.role === "admin" ? " · Админ" : ""}</span>{profile?.role === "admin" && <button className="badge" onClick={()=>router.push("/admin")} style={{background:"none",border:0,cursor:"pointer"}}>Админка</button>}<button className="badge" onClick={logout} style={{background:"none",border:0,cursor:"pointer"}}>Выйти</button></div></header>
+    {loadError && <section className="card" style={{marginBottom:16,border:"1px solid #b91c1c"}}><b>Ошибка загрузки данных</b><p className="badge" style={{marginBottom:0}}>{loadError}</p></section>}
     <div className="grid" style={{gridTemplateColumns:"minmax(0,1.7fr) minmax(300px,1fr)"}}>
       <section className="card"><h1>Мои прогнозы</h1><p className="badge" style={{marginBottom:18}}>Прогноз можно менять до начала матча. Чужие прогнозы до дедлайна не показываются.</p>{matches.length===0?<p className="badge">Матчи пока не добавлены. Их добавит администратор.</p>:matches.map(match=>{const locked=new Date(match.kickoff_at).getTime()<=Date.now();const value=predictions[match.id];const result=results[match.id];return <article key={match.id} className="card" style={{marginBottom:12,background:"rgba(23,36,59,.65)"}}><div className="badge">{formatDate(match.kickoff_at)} · {locked?"Прогноз закрыт":"Приём прогнозов открыт"}</div><h3 style={{margin:"8px 0 12px"}}>{match.home_team} — {match.away_team}</h3>{match.home_score!==null&&match.away_score!==null&&<p className="badge">Результат: {match.home_score}:{match.away_score}</p>}{locked&&value&&result?.points!==null&&<p style={{margin:"8px 0",fontWeight:800}}>Мой прогноз: {value.home_score}:{value.away_score} · <span>{result.points} {result.points===1?"очко":"очка"}</span></p>}{locked&&!value&&<p className="badge" style={{margin:"8px 0"}}>Прогноз не был сделан.</p>}{!locked&&<div style={{display:"flex",gap:8,alignItems:"center"}}><input className="input" style={{maxWidth:80}} type="number" min="0" value={value?.home_score ?? ""} placeholder="0" onChange={e=>setPredictions(x=>({...x,[match.id]:{match_id:match.id,home_score:Number(e.target.value),away_score:x[match.id]?.away_score ?? 0}}))}/><b>:</b><input className="input" style={{maxWidth:80}} type="number" min="0" value={value?.away_score ?? ""} placeholder="0" onChange={e=>setPredictions(x=>({...x,[match.id]:{match_id:match.id,home_score:x[match.id]?.home_score ?? 0,away_score:Number(e.target.value)}}))}/><button className="cta" onClick={()=>savePrediction(match)} style={{border:0,cursor:"pointer",marginTop:0}}>{value?"Сохранить изменения":"Сохранить прогноз"}</button></div>}</article>})}{status&&<p className="badge">{status}</p>}</section>
       <div style={{display:"grid",gap:16,alignContent:"start"}}>
