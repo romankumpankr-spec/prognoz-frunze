@@ -1,50 +1,60 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "../../../lib/supabase/client";
 
-type Participant = { id: string; display_name: string; role: "player" | "admin" };
-type Submission = { user_id: string; submitted_at: string };
-type Selection = { user_id: string; team_name: string; created_at: string };
+type OrderItem = { id: string; display_name: string; position: number };
+type DraftStatus = { started:boolean; finished:boolean; current_pick:number; round_number:number; current_user_id:string|null; current_user_name:string|null; your_turn:boolean; player_order:OrderItem[]; own_picks:string[]; available_teams:string[]; picked_count:number };
+type Pick = { user_id:string; team_name:string; pick_number:number; round_number:number; created_at:string };
+
+type Data = { state: DraftStatus; picks: Pick[] };
 
 export default function AdminTeamsPage() {
-  const supabase = createClient(); const router = useRouter();
-  const [participants, setParticipants] = useState<Participant[]>([]);
-  const [submissions, setSubmissions] = useState<Submission[]>([]);
-  const [selections, setSelections] = useState<Selection[]>([]);
-  const [allowed, setAllowed] = useState(false); const [status, setStatus] = useState("");
+  const supabase = createClient();
+  const router = useRouter();
+  const [data,setData]=useState<Data|null>(null);
+  const [allowed,setAllowed]=useState(false);
+  const [message,setMessage]=useState("");
+  const [busy,setBusy]=useState(false);
 
-  async function load() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { router.replace("/login"); return; }
-    const { data: me } = await supabase.from("profiles").select("role").eq("id", user.id).single();
-    if (me?.role !== "admin") { router.replace("/dashboard"); return; }
+  async function load(){
+    const {data:{user}}=await supabase.auth.getUser();
+    if(!user){router.replace("/login");return;}
+    const {data:me}=await supabase.from("profiles").select("role").eq("id",user.id).single();
+    if(me?.role!=="admin"){router.replace("/dashboard");return;}
     setAllowed(true);
-    const [{ data: p }, { data: s }, { data: picks }] = await Promise.all([
-      supabase.from("profiles").select("id,display_name,role").order("display_name"),
-      supabase.from("team_draft_submissions").select("user_id,submitted_at").order("submitted_at"),
-      supabase.from("team_draft_selections").select("user_id,team_name,created_at").order("created_at")
-    ]);
-    setParticipants(p ?? []); setSubmissions(s ?? []); setSelections(picks ?? []);
+    const {data:d,error}=await supabase.rpc("admin_team_draft_data");
+    if(error)setMessage(error.message); else setData(d as Data);
   }
-  useEffect(() => { load(); }, []);
+  useEffect(()=>{load();},[]);
 
-  const submitted = useMemo(() => new Set(submissions.map(x => x.user_id)), [submissions]);
-  const picksFor = (id: string) => selections.filter(x => x.user_id === id).map(x => x.team_name);
-
-  async function reset(id: string, name: string) {
-    if (!confirm(`Сбросить выбор ${name}? Участник сможет выбрать 6 команд заново.`)) return;
-    const { error: a } = await supabase.from("team_draft_submissions").delete().eq("user_id", id);
-    const { error: b } = await supabase.from("team_draft_selections").delete().eq("user_id", id);
-    setStatus(a || b ? "Не удалось сбросить выбор." : `Выбор ${name} сброшен.`);
-    await load();
+  async function start(){
+    if(!confirm("Провести новый жребий? Все текущие выборы будут сброшены."))return;
+    setBusy(true);setMessage("");
+    const {data:d,error}=await supabase.rpc("start_team_draft");
+    setBusy(false);
+    if(error)setMessage(error.message);else{setData({state:d as DraftStatus,picks:[]});setMessage("Жребьевка проведена.");}
+  }
+  async function reset(){
+    if(!confirm("Полностью сбросить турнир «6 команд»? После этого нужно будет провести новый жребий."))return;
+    setBusy(true);setMessage("");
+    const {error}=await supabase.rpc("reset_team_draft");
+    setBusy(false);
+    if(error)setMessage(error.message);else{setMessage("Турнир сброшен.");await load();}
   }
 
-  if (!allowed) return null;
+  if(!allowed)return null;
+  const state=data?.state;
+  const picks=data?.picks??[];
+  const name=(id:string)=>state?.player_order.find(p=>p.id===id)?.display_name??"Участник";
+
   return <main className="page"><div className="container">
-    <header className="header"><div className="logo">ПРОГНОЗ<span>-ФРУНЗЕ</span></div><button className="text-button" onClick={() => router.push("/teams")}>← К турниру</button></header>
-    <section className="card"><span className="eyebrow">Администрирование</span><h1>🏆 Турнир «6 команд»</h1><p>Здесь видно, кто уже отправил свой выбор и какие 6 команд выбраны. Подсчёт результатов пока не выполняется.</p></section>
-    <section className="card" style={{marginTop:16}}><h2>Статус участников</h2><div style={{display:"grid",gap:0,marginTop:10}}>{participants.filter(p => p.role === "player").map((p,i) => { const picks=picksFor(p.id); const done=submitted.has(p.id); return <div key={p.id} style={{display:"grid",gridTemplateColumns:"32px minmax(130px,180px) 1fr auto",gap:12,alignItems:"center",padding:"14px 0",borderBottom:i===participants.length-2?"none":"1px solid var(--border)"}}><b>{i+1}</b><strong>{p.display_name}</strong><div>{done ? <span>{picks.join(" · ") || "Выбор пуст"}</span> : <span className="badge">Ещё не отправил</span>}</div>{done && <button className="text-button" onClick={()=>reset(p.id,p.display_name)}>Сбросить</button>}</div> })}</div><p className="badge" style={{marginTop:14}}>Отправили: {submissions.length} из {participants.filter(p=>p.role==="player").length}</p>{status&&<p className="status-line">{status}</p>}</section>
+    <header className="header"><div className="logo">ПРОГНОЗ<span>-ФРУНЗЕ</span></div><button className="text-button" onClick={()=>router.push("/teams")}>← К турниру</button></header>
+    <section className="card"><span className="eyebrow">Администрирование</span><h1>👕 Турнир «6 команд»</h1><p>36 команд распределяются между 6 участниками по системе snake draft. Уже выбранные команды не показываются другим участникам, а команда, которая встречается с одной из ваших команд в лиге, недоступна для вашего выбора.</p><div className="top-actions" style={{marginTop:14}}><button className="cta" disabled={busy} onClick={start}>🎲 Новый жребий</button><button className="text-button" disabled={busy} onClick={reset}>Сбросить турнир</button></div>{message&&<p className="status-line">{message}</p>}</section>
+    {state?.started&&<>
+      <section className="card" style={{marginTop:16}}><div className="section-heading"><div><h2>Порядок выбора</h2><p className="badge">Ход № {state.current_pick<=36?state.current_pick:"завершено"} · Раунд {Math.min(state.round_number,6)}/6</p></div><span className="badge">{state.picked_count}/36</span></div><div className="draft-order-grid">{state.player_order.map((p,i)=><div key={p.id} className={`draft-order-item ${p.id===state.current_user_id?"current":""}`}><span>{i+1}</span><b>{p.display_name}</b>{p.id===state.current_user_id&&<em>ХОД</em>}</div>)}</div></section>
+      <section className="card" style={{marginTop:16}}><h2>История выбора</h2>{picks.length===0?<p className="badge">Пока ни одна команда не выбрана.</p>:<div className="draft-table">{picks.map(p=><div className="draft-row" key={p.pick_number}><b>#{p.pick_number} · {name(p.user_id)}</b><span>{p.team_name}</span></div>)}</div>}</section>
+    </>}
   </div></main>;
 }
