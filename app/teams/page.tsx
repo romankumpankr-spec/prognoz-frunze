@@ -4,64 +4,107 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "../../lib/supabase/client";
 
-type Profile = { id: string; display_name: string; role: "player" | "admin" };
-type Selection = { user_id: string; team_name: string; created_at: string };
-type Submission = { user_id: string; submitted_at: string };
-
-const TEAMS = [
-  "АЕК Афины", "Астон Вилла", "Арсенал", "Атлетико", "Барселона", "Бавария", "Бетис", "Боруссия Дортмунд", "Брюгге", "Будё-Глимт", "Викинг", "Вильярреал", "Галатасарай", "Интер", "Комо", "Ланс", "ЛАСК", "Лейпциг", "Лилль", "Ливерпуль", "МЮ", "Ман Сити", "Наполи", "Порту", "ПСВ", "ПСЖ", "Реал", "Рома", "Сабах", "Славия", "Слован", "Спортинг", "Шахтер", "Штутгарт", "Фейеноорд", "Фенербахче"
-];
+type OrderItem = { id: string; display_name: string; position: number };
+type DraftStatus = {
+  started: boolean; finished: boolean; current_pick: number; round_number: number;
+  current_user_id: string | null; current_user_name: string | null; your_turn: boolean;
+  player_order: OrderItem[]; own_picks: string[]; available_teams: string[]; picked_count: number;
+};
 
 export default function TeamsPage() {
-  const supabase = createClient(); const router = useRouter();
-  const [userId, setUserId] = useState(""); const [profile, setProfile] = useState<Profile | null>(null); const [profiles, setProfiles] = useState<Record<string,string>>({});
-  const [selected, setSelected] = useState<string[]>([]); const [submitted, setSubmitted] = useState<Submission[]>([]); const [selections, setSelections] = useState<Selection[]>([]);
-  const [status, setStatus] = useState(""); const [saving, setSaving] = useState(false);
+  const supabase = createClient();
+  const router = useRouter();
+  const [userId, setUserId] = useState("");
+  const [profile, setProfile] = useState<{ display_name: string; role: "player" | "admin" } | null>(null);
+  const [status, setStatus] = useState<DraftStatus | null>(null);
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [picking, setPicking] = useState(false);
+  const [starting, setStarting] = useState(false);
 
   async function load() {
-    const { data: { user } } = await supabase.auth.getUser(); if (!user) { router.replace("/login"); return; }
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { router.replace("/login"); return; }
     setUserId(user.id);
-    const [{ data: p }, { data: mine }, { data: subs }, { data: all }, { data: people }] = await Promise.all([
-      supabase.from("profiles").select("id,display_name,role").eq("id", user.id).single(),
-      supabase.from("team_draft_selections").select("team_name,created_at").eq("user_id", user.id).order("created_at"),
-      supabase.from("team_draft_submissions").select("user_id,submitted_at").order("submitted_at"),
-      supabase.from("team_draft_selections").select("user_id,team_name,created_at").order("created_at"),
-      supabase.from("profiles").select("id,display_name").order("display_name")
+    const [{ data: p }, { data: s, error }] = await Promise.all([
+      supabase.from("profiles").select("display_name,role").eq("id", user.id).single(),
+      supabase.rpc("team_draft_status")
     ]);
-    const nameMap: Record<string,string> = {}; for (const person of people ?? []) nameMap[person.id] = person.display_name;
-    setProfile(p ?? null); setProfiles(nameMap); setSelected((mine ?? []).map(x => x.team_name)); setSubmitted(subs ?? []); setSelections(all ?? []);
+    setProfile(p ?? null);
+    if (error) setMessage(error.message);
+    else setStatus(s as DraftStatus);
+    setLoading(false);
   }
+
   useEffect(() => { load(); }, []);
 
-  const submittedSet = useMemo(() => new Set(submitted.map(x => x.user_id)), [submitted]);
-  const visiblePeople = useMemo(() => Array.from(new Set(selections.filter(x => submittedSet.has(x.user_id)).map(x => x.user_id))), [selections, submittedSet]);
+  const currentOrder = useMemo(() => {
+    if (!status) return [];
+    return status.player_order.map((p, i) => ({ ...p, isCurrent: p.id === status.current_user_id, isMe: p.id === userId, place: i + 1 }));
+  }, [status, userId]);
 
-  function toggleTeam(team: string) {
-    if (submittedSet.has(userId)) return;
-    setSelected(current => current.includes(team) ? current.filter(x => x !== team) : current.length >= 6 ? current : [...current, team]);
+  async function startDraft() {
+    if (!confirm("Провести жребьевку и начать новый турнир «6 команд»? Текущие тестовые выборы будут сброшены.")) return;
+    setStarting(true); setMessage("");
+    const { data, error } = await supabase.rpc("start_team_draft");
+    setStarting(false);
+    if (error) setMessage(error.message);
+    else { setStatus(data as DraftStatus); setMessage("Жребьевка проведена. Начался первый выбор."); }
   }
 
-  async function save() {
-    if (selected.length !== 6) { setStatus("Нужно выбрать ровно 6 команд."); return; }
-    setSaving(true); setStatus("");
-    const { error: deleteError } = await supabase.from("team_draft_selections").delete().eq("user_id", userId);
-    if (deleteError) { setSaving(false); setStatus("Не удалось сохранить выбор."); return; }
-    const { error: insertError } = await supabase.from("team_draft_selections").insert(selected.map(team_name => ({ user_id: userId, team_name })));
-    if (insertError) { setSaving(false); setStatus("Не удалось сохранить команды."); return; }
-    const { error: submitError } = await supabase.from("team_draft_submissions").insert({ user_id: userId });
-    setSaving(false); setStatus(submitError ? (submitError.message || "Не удалось отправить выбор.") : "Выбор из 6 команд отправлен.");
-    await load();
+  async function pick(team: string) {
+    if (!status?.your_turn || picking) return;
+    setPicking(true); setMessage("");
+    const { data, error } = await supabase.rpc("make_team_draft_pick", { p_team_name: team });
+    setPicking(false);
+    if (error) setMessage(error.message);
+    else { setStatus(data as DraftStatus); setMessage(`Выбрано: ${team}`); }
   }
 
-  async function logout(){ await supabase.auth.signOut(); router.replace("/"); }
+  async function logout() { await supabase.auth.signOut(); router.replace("/"); }
+
+  if (loading) return <main className="page"><div className="container"><section className="card"><p>Загрузка турнира…</p></section></div></main>;
 
   return <main className="page"><div className="container">
-    <header className="header"><div className="logo">ПРОГНОЗ<span>-ФРУНЗЕ</span></div><div className="top-actions"><span className="badge">{profile?.display_name ?? "Участник"}</span>{profile?.role === "admin" && <button className="text-button" onClick={()=>router.push("/admin")}>Админка</button>}{profile?.role === "admin" && <button className="text-button" onClick={()=>router.push("/admin/teams")}>6 команд — админ</button>}<button className="text-button" onClick={logout}>Выйти</button></div></header>
-    <section className="card team-hero"><span className="eyebrow">Отдельный турнир</span><h1>🏆 Выбор 6 команд</h1><p>Каждый участник выбирает ровно 6 команд. На этом этапе мы только фиксируем выбор. Подсчёт очков и итоговая таблица результатов будут добавлены позже.</p><div className="team-counter"><strong>{selected.length}/6</strong><span>{submittedSet.has(userId) ? "Выбор отправлен" : selected.length === 6 ? "Можно отправлять" : `Нужно выбрать ещё ${6-selected.length}`}</span></div></section>
-    <div className="team-layout">
-      <section className="card"><div className="section-heading"><div><h2>Команды</h2><p className="badge">Нажми на команду, чтобы выбрать или убрать её.</p></div><span className="badge">{TEAMS.length} команд</span></div><div className="team-grid">{TEAMS.map(team=><button key={team} className={`team-option ${selected.includes(team)?"selected":""}`} disabled={submittedSet.has(userId)} onClick={()=>toggleTeam(team)}><span>{selected.includes(team)?"✓":"○"}</span>{team}</button>)}</div>{!submittedSet.has(userId)&&<button className="cta team-submit" disabled={saving} onClick={save}>{saving?"Сохраняем…":"Отправить выбор 6 команд"}</button>}{status&&<p className="status-line">{status}</p>}</section>
-      <aside className="card"><h2>Мой выбор</h2>{selected.length===0?<p className="badge">Пока ничего не выбрано.</p>:<ol className="selected-list">{selected.map(t=><li key={t}>{t}</li>)}</ol>}<div className="mini-stat"><strong>{submitted.length}/6</strong><span>участников уже сделали выбор</span></div><p className="badge" style={{marginTop:14}}>После отправки изменить выбор пока нельзя.</p></aside>
-    </div>
-    <section className="card" style={{marginTop:16}}><h2>📋 Выбор участников</h2><p className="badge">После отправки своего выбора тебе становятся видны выборы всех участников, которые уже отправили свои 6 команд.</p>{visiblePeople.length===0?<p className="badge">Пока никто не отправил выбор.</p>:<div className="draft-table">{visiblePeople.map(id=>{const picks=selections.filter(x=>x.user_id===id).map(x=>x.team_name); return <div className="draft-row" key={id}><b>{profiles[id] ?? "Участник"}</b><span>{picks.join(" · ")}</span></div>})}</div>}</section>
+    <header className="header">
+      <div className="logo">ПРОГНОЗ<span>-ФРУНЗЕ</span></div>
+      <div className="top-actions">
+        <span className="badge">{profile?.display_name ?? "Участник"}</span>
+        {profile?.role === "admin" && <button className="text-button" onClick={() => router.push("/admin/teams")}>Админка 6 команд</button>}
+        <button className="text-button" onClick={() => router.push("/dashboard")}>Прогнозы</button>
+        <button className="text-button" onClick={logout}>Выйти</button>
+      </div>
+    </header>
+
+    <section className="card team-hero">
+      <span className="eyebrow">Отдельный турнир</span>
+      <h1>👕 6 команд</h1>
+      <p>36 команд распределяются между 6 участниками по жребию. Каждый получает по 6 команд. Выбор идет змейкой: <b>1→2→3→4→5→6, затем 6→5→4→3→2→1</b> и так до 36-й команды.</p>
+      <div className="team-counter"><strong>{status?.picked_count ?? 0}/36</strong><span>{!status?.started ? "Жеребьевка еще не начата" : status.finished ? "Все команды распределены" : status.your_turn ? `Ваш ход — выбор №${status.current_pick}` : `Сейчас выбирает ${status.current_user_name ?? "участник"}`}</span></div>
+      {profile?.role === "admin" && !status?.started && <button className="cta team-submit" disabled={starting} onClick={startDraft}>{starting ? "Проводим жребий…" : "🎲 Провести жребьевку и начать"}</button>}
+      {message && <p className="status-line">{message}</p>}
+    </section>
+
+    {status?.started && <>
+      <section className="card" style={{marginTop:16}}>
+        <div className="section-heading"><div><h2>🎲 Порядок выбора</h2><p className="badge">Порядок определяется случайно один раз в начале турнира.</p></div><span className="badge">Раунд {Math.min(status.round_number, 6)} из 6</span></div>
+        <div className="draft-order-grid">{currentOrder.map(p => <div key={p.id} className={`draft-order-item ${p.isCurrent ? "current" : ""} ${p.isMe ? "me" : ""}`}><span>{p.place}</span><b>{p.display_name}</b>{p.isCurrent && <em>ХОД</em>}</div>)}</div>
+      </section>
+
+      <div className="team-layout">
+        <section className="card">
+          <div className="section-heading"><div><h2>{status.your_turn ? "Ваш выбор" : "Доступные команды"}</h2><p className="badge">Команды, уже выбранные другими участниками, и команды, играющие с вашими командами, здесь не показываются.</p></div><span className="badge">Доступно: {status.available_teams.length}</span></div>
+          <div className="team-grid">{status.available_teams.map(team => <button key={team} className="team-option" disabled={!status.your_turn || picking} onClick={() => pick(team)}><span>○</span>{team}</button>)}</div>
+          {status.your_turn && <p className="badge" style={{marginTop:12}}>Нажми на одну команду — выбор сразу фиксируется.</p>}
+        </section>
+
+        <aside className="card">
+          <h2>Мои команды</h2>
+          {status.own_picks.length === 0 ? <p className="badge">Пока ничего не выбрано.</p> : <ol className="selected-list">{status.own_picks.map(t => <li key={t}>{t}</li>)}</ol>}
+          <div className="mini-stat"><strong>{status.own_picks.length}/6</strong><span>ваших команд выбрано</span></div>
+          <p className="badge" style={{marginTop:14}}>После каждого выбора очередь автоматически переходит к следующему участнику по змейке.</p>
+        </aside>
+      </div>
+    </>}
   </div></main>;
 }
