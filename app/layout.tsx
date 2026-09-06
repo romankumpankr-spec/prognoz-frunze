@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./site-ui.css";
 import AppNav from "../components/app-nav";
+import LanguageSwitcher from "../components/language-switcher";
 
 export const metadata: Metadata = {
   title: "Прогноз-Фрунзе",
@@ -10,7 +12,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="ru">
-      <body><AppNav />{children}</body>
+      <body><LanguageSwitcher /><AppNav />{children}</body>
     </html>
   );
 }
