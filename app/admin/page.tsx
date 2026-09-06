@@ -7,22 +7,24 @@ import { createClient } from "../../lib/supabase/client";
 type Round = { id: string; name: string; sort_order: number };
 type Match = { id: string; round_id: string; home_team: string; away_team: string; kickoff_at: string; home_score: number | null; away_score: number | null };
 type Participant = { id: string; display_name: string; role: "player" | "admin" };
+type Submitted = { match_id: string; user_id: string; submitted_at: string | null };
 
 export default function AdminPage() {
   const supabase = createClient(); const router = useRouter();
-  const [rounds,setRounds]=useState<Round[]>([]); const [matches,setMatches]=useState<Match[]>([]); const [participants,setParticipants]=useState<Participant[]>([]); const [allowed,setAllowed]=useState(false);
+  const [rounds,setRounds]=useState<Round[]>([]); const [matches,setMatches]=useState<Match[]>([]); const [participants,setParticipants]=useState<Participant[]>([]); const [submitted,setSubmitted]=useState<Submitted[]>([]); const [allowed,setAllowed]=useState(false);
   const [roundName,setRoundName]=useState(""); const [home,setHome]=useState(""); const [away,setAway]=useState(""); const [kickoff,setKickoff]=useState(""); const [roundId,setRoundId]=useState(""); const [status,setStatus]=useState("");
 
   async function load(){
     const {data:{user}}=await supabase.auth.getUser(); if(!user)return router.replace("/login");
     const {data:profile}=await supabase.from("profiles").select("role").eq("id",user.id).single(); if(profile?.role!=="admin")return router.replace("/dashboard");
     setAllowed(true);
-    const [{data:rs},{data:ms},{data:ps}]=await Promise.all([
+    const [{data:rs},{data:ms},{data:ps},{data:subs}]=await Promise.all([
       supabase.from("rounds").select("id,name,sort_order").order("sort_order"),
       supabase.from("matches").select("id,round_id,home_team,away_team,kickoff_at,home_score,away_score").order("kickoff_at"),
-      supabase.from("profiles").select("id,display_name,role").order("display_name")
+      supabase.from("profiles").select("id,display_name,role").order("display_name"),
+      supabase.from("predictions").select("match_id,user_id,submitted_at").not("submitted_at","is",null)
     ]);
-    setRounds(rs??[]);setMatches(ms??[]);setParticipants(ps??[]);if(!roundId&&rs?.[0])setRoundId(rs[0].id);
+    setRounds(rs??[]);setMatches(ms??[]);setParticipants(ps??[]);setSubmitted(subs??[]);if(!roundId&&rs?.[0])setRoundId(rs[0].id);
   }
   useEffect(()=>{load(); // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
@@ -31,17 +33,29 @@ export default function AdminPage() {
   async function addMatch(e:FormEvent){e.preventDefault();if(!roundId||!home.trim()||!away.trim()||!kickoff)return;const {error}=await supabase.from("matches").insert({round_id:roundId,home_team:home.trim(),away_team:away.trim(),kickoff_at:new Date(kickoff).toISOString()});setStatus(error?"Ошибка при добавлении матча.":"Матч добавлен.");if(!error){setHome("");setAway("");setKickoff("");}await load();}
   async function setResult(match:Match,hs:string,as:string){if(hs===""||as==="")return;const {error}=await supabase.from("matches").update({home_score:Number(hs),away_score:Number(as)}).eq("id",match.id);setStatus(error?"Не удалось сохранить фактический результат.":"Фактический результат сохранён. Очки пересчитываются автоматически.");await load();}
 
+  function roundStats(roundId:string){
+    const ids=new Set(matches.filter(m=>m.round_id===roundId).map(m=>m.id));
+    const userIds=new Set(submitted.filter(s=>ids.has(s.match_id)).map(s=>s.user_id));
+    const complete=participants.filter(p=>p.role==="player" && matches.filter(m=>m.round_id===roundId).every(m=>submitted.some(s=>s.match_id===m.id&&s.user_id===p.id))).length;
+    return {sent:userIds.size,complete};
+  }
+
   if(!allowed)return null;
   return <main className="page"><div className="container">
     <header className="header"><div className="logo">ПРОГНОЗ<span>-ФРУНЗЕ</span></div><button className="badge" onClick={()=>router.push("/dashboard")} style={{background:"none",border:0,cursor:"pointer"}}>← В кабинет</button></header>
     <h1>Панель администратора</h1>
-    <p className="badge">Добавляйте туры и матчи. После окончания матча внесите фактический счёт — очки пересчитаются автоматически.</p>
+    <p className="badge">Здесь добавляются туры и матчи, а после завершения матча вводится фактический счёт. Участникам не нужно подтверждать прогноз отдельно: отправка прогноза за тур фиксирует его.</p>
+
+    <section className="card" style={{marginTop:20}}><h2 style={{marginTop:0}}>Статус туров</h2>{rounds.length===0?<p className="badge">Туров пока нет.</p>:rounds.map(r=>{const st=roundStats(r.id);return <div key={r.id} style={{display:"grid",gridTemplateColumns:"1fr auto",gap:12,padding:"10px 0",borderBottom:"1px solid var(--border)"}}><b>{r.name}</b><span className="badge">Отправили: {st.sent} · полностью: {st.complete}</span></div>})}</section>
+
     <section className="card" style={{marginTop:20}}><h2 style={{marginTop:0}}>Участники</h2><div style={{display:"grid",gap:8}}>{participants.map((p,i)=><div key={p.id} style={{display:"grid",gridTemplateColumns:"32px 1fr auto",gap:8,alignItems:"center",padding:"9px 0",borderBottom:i===participants.length-1?"none":"1px solid var(--border)"}}><b>{i+1}</b><span>{p.display_name}</span><span className="badge">{p.role==="admin"?"Администратор":"Участник"}</span></div>)}</div></section>
+
     <div className="grid" style={{gridTemplateColumns:"1fr 1fr",marginTop:20}}>
-      <form className="card form" onSubmit={addRound}><h2>Новый тур</h2><input className="input" placeholder="Например: Тур 1" value={roundName} onChange={e=>setRoundName(e.target.value)} required/><button className="cta" type="submit" style={{border:0,cursor:"pointer",marginTop:0}}>Добавить тур</button></form>
+      <form className="card form" onSubmit={addRound}><h2>Новый тур</h2><input className="input" placeholder="Например: Тур 2" value={roundName} onChange={e=>setRoundName(e.target.value)} required/><button className="cta" type="submit" style={{border:0,cursor:"pointer",marginTop:0}}>Добавить тур</button></form>
       <form className="card form" onSubmit={addMatch}><h2>Новый матч</h2><select className="input" value={roundId} onChange={e=>setRoundId(e.target.value)} required><option value="">Выберите тур</option>{rounds.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select><input className="input" placeholder="Хозяева" value={home} onChange={e=>setHome(e.target.value)} required/><input className="input" placeholder="Гости" value={away} onChange={e=>setAway(e.target.value)} required/><input className="input" type="datetime-local" value={kickoff} onChange={e=>setKickoff(e.target.value)} required/><button className="cta" type="submit" style={{border:0,cursor:"pointer",marginTop:0}}>Добавить матч</button></form>
     </div>
     {status&&<p className="badge" style={{marginTop:16}}>{status}</p>}
-    <section className="card" style={{marginTop:20}}><h2>Матчи и фактические результаты</h2>{matches.length===0?<p className="badge">Матчей пока нет.</p>:matches.map(m=><div key={m.id} style={{padding:"14px 0",borderBottom:"1px solid var(--border)"}}><div className="badge">{rounds.find(r=>r.id===m.round_id)?.name??"Тур"} · {new Date(m.kickoff_at).toLocaleString("ru-RU")}</div><div style={{display:"flex",alignItems:"center",gap:8,marginTop:8,flexWrap:"wrap"}}><b>{m.home_team}</b><input className="input" style={{maxWidth:70}} type="number" min="0" defaultValue={m.home_score??""} id={`h-${m.id}`}/><span>:</span><input className="input" style={{maxWidth:70}} type="number" min="0" defaultValue={m.away_score??""} id={`a-${m.id}`}/><b>{m.away_team}</b><button className="cta" onClick={()=>{const h=(document.getElementById(`h-${m.id}`) as HTMLInputElement).value;const a=(document.getElementById(`a-${m.id}`) as HTMLInputElement).value;setResult(m,h,a)}} style={{border:0,cursor:"pointer",marginTop:0}}>{m.home_score!==null?"Изменить факт":"Сохранить факт"}</button>{m.home_score!==null&&<span className="badge">Факт: {m.home_score}:{m.away_score}</span>}</div></div>)}</section>
+
+    <section className="card" style={{marginTop:20}}><h2>Матчи и фактические результаты</h2>{matches.length===0?<p className="badge">Матчей пока нет.</p>:matches.map(m=>{const sent= new Set(submitted.filter(s=>s.match_id===m.id).map(s=>s.user_id));return <div key={m.id} style={{padding:"14px 0",borderBottom:"1px solid var(--border)"}}><div className="badge">{rounds.find(r=>r.id===m.round_id)?.name??"Тур"} · {new Date(m.kickoff_at).toLocaleString("ru-RU")} · отправили {sent.size}</div><div style={{display:"flex",alignItems:"center",gap:8,marginTop:8,flexWrap:"wrap"}}><b>{m.home_team}</b><input className="input" style={{maxWidth:70}} type="number" min="0" defaultValue={m.home_score??""} id={`h-${m.id}`}/><span>:</span><input className="input" style={{maxWidth:70}} type="number" min="0" defaultValue={m.away_score??""} id={`a-${m.id}`}/><b>{m.away_team}</b><button className="cta" onClick={()=>{const h=(document.getElementById(`h-${m.id}`) as HTMLInputElement).value;const a=(document.getElementById(`a-${m.id}`) as HTMLInputElement).value;setResult(m,h,a)}} style={{border:0,cursor:"pointer",marginTop:0}}>{m.home_score!==null?"Изменить факт":"Сохранить факт"}</button>{m.home_score!==null&&<span className="badge">Факт: {m.home_score}:{m.away_score}</span>}</div></div>})}</section>
   </div></main>;
 }
