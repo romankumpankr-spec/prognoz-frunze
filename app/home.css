@@ -1,38 +1,18 @@
-/* Final homepage visual layer: follows the approved mining dashboard mockup. */
+/* Homepage visual layer */
 .home-page{background:#06111d;min-height:100vh;overflow:hidden}
 .home-nav{min-height:76px;padding:0 48px;background:rgba(5,16,28,.98);border-bottom:1px solid #1c3448}
 .home-brand .brand-mark{font-size:31px;color:#fff;text-shadow:10px 0 #f3c534}
 .home-nav nav a{color:#a9b8c8}
 .home-nav nav a:hover,.home-nav nav a.active{color:#32caff;border-color:#32caff}
 .home-login{border-color:#2c526d}
-.mine-hero{min-height:505px;padding:44px 5%;background-image:linear-gradient(90deg,rgba(4,13,23,.08),rgba(4,13,23,0) 50%,rgba(4,13,23,.08)),url('/mine-hero-real.svg');background-size:cover;background-position:center;}
-.mine-hero:after{background:linear-gradient(0deg,#06111d 0,transparent 15%,transparent 88%,rgba(4,13,23,.08))}
-.mine-brand,.mine-flag{display:none}
-.countdown-card{width:min(650px,70vw);padding:26px 28px 20px;background:transparent;border:0;box-shadow:none;backdrop-filter:none}
-.countdown-title,.countdown-subtitle,.countdown-message{visibility:hidden}
-.countdown-title{height:30px;margin-bottom:5px}
-.countdown-subtitle{height:14px}
-.countdown-grid{margin-top:20px}
-.count-box{background:rgba(7,15,25,.88);border:1px solid rgba(73,91,108,.75);box-shadow:0 2px 12px rgba(0,0,0,.2)}
-.count-box strong{font-size:48px;text-shadow:0 2px 8px rgba(0,0,0,.6)}
-.countdown-message{height:40px;margin-top:22px}
-.home-cards{width:min(1500px,94%);gap:18px;padding:22px 0 20px}
-.home-card{min-height:128px;background:linear-gradient(135deg,rgba(15,34,52,.96),rgba(7,20,32,.98));border-color:#203a50}
-.home-card:hover{border-color:#2d6888}
-.home-footer-promo{width:min(1500px,94%);}
-@media(max-width:760px){
- .home-nav{padding:10px 12px;min-height:64px;gap:8px;flex-wrap:wrap}
- .home-brand{min-width:0;flex:1}
- .home-brand b{font-size:15px}.home-brand small{font-size:7px;letter-spacing:1.2px}
- .home-nav nav{order:3;width:100%;overflow-x:auto;justify-content:flex-start;scrollbar-width:none}
- .home-nav nav::-webkit-scrollbar{display:none}
- .home-nav nav a{padding:10px 9px;font-size:12px}
- .home-login{padding:8px 10px;font-size:13px}
- .mine-hero{min-height:370px;padding:20px 8px;background-position:center}
- .countdown-card{width:94vw;padding:20px 8px}
- .countdown-grid{gap:5px;margin-top:12px}
- .count-box{padding:11px 4px 9px}.count-box strong{font-size:30px}.count-box span{font-size:8px}
- .home-cards{grid-template-columns:1fr 1fr;width:94%;gap:9px;padding-top:14px}
- .home-card{min-height:100px;padding:12px;gap:9px}.home-card>span{width:42px;height:42px;font-size:22px}.home-card b{font-size:15px}.home-card small{font-size:10px}.home-card i{width:30px;height:30px;font-size:18px}
-}
-@media(max-width:430px){.home-cards{grid-template-columns:1fr}.mine-hero{min-height:300px}.count-box strong{font-size:25px}}
+.mine-hero{min-height:505px;padding:44px 5%;background-image:linear-gradient(90deg,rgba(4,13,23,.48),rgba(4,13,23,.12) 50%,rgba(4,13,23,.38)),url('https://www.rbc.ua/static/img/1/2/125935104_112721497318120_2646354892485169535_n_1300x820.jpg');background-size:cover;background-position:center 42%;position:relative}
+.mine-hero:after{background:linear-gradient(0deg,#06111d 0,transparent 15%,transparent 88%,rgba(4,13,23,.16))}
+.mine-brand{display:flex;position:absolute;left:6%;top:48px;z-index:2;flex-direction:column;text-shadow:0 2px 8px #000}
+.mine-logo{font-size:66px;line-height:.72;color:#f2f4f5;font-weight:900;transform:skew(-10deg)}
+.mine-brand b{font-size:28px;letter-spacing:1px}.mine-brand span{color:#d6e0e8;font-size:11px;letter-spacing:4px;margin-top:9px}
+.mine-flag{display:block;position:absolute;right:7%;top:58px;z-index:2;width:165px;padding:18px 18px 25px 28px;background:linear-gradient(160deg,#0c1b2b,#172b3c);clip-path:polygon(0 0,100% 13%,84% 100%,0 83%);text-align:center;transform:rotate(2deg);color:#fff}.flag-mark{font-size:38px;line-height:1}.mine-flag b{font-size:14px}
+.countdown-card{width:min(650px,70vw);padding:26px 28px 20px;background:rgba(8,17,28,.84);border:1px solid rgba(125,157,180,.4);border-radius:18px;box-shadow:0 20px 55px rgba(0,0,0,.38);backdrop-filter:blur(10px);text-align:center;position:relative;z-index:2}
+.countdown-title{font-size:25px;font-weight:900;letter-spacing:.5px}.countdown-subtitle{margin-top:5px;color:#b8c6d2;font-size:12px;letter-spacing:1.5px}.countdown-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:20px}.count-box{padding:14px 8px 12px;background:rgba(3,10,17,.78);border:1px solid #294155;border-radius:11px}.count-box strong{display:block;font-size:48px;line-height:1;letter-spacing:2px}.count-box span{display:block;margin-top:8px;color:#a8b7c6;font-size:11px;font-weight:800;letter-spacing:.8px}.countdown-message{margin-top:22px;color:#f0f3f5;font-size:22px;font-style:italic;font-family:Georgia,serif}.countdown-message:after{content:"";display:block;width:145px;height:3px;margin:10px auto 0;background:#ff6948;transform:skew(-20deg)}
+.home-cards{width:min(1500px,94%);gap:18px;padding:22px 0 20px}.home-card{min-height:128px;background:linear-gradient(135deg,rgba(15,34,52,.96),rgba(7,20,32,.98));border-color:#203a50}.home-card:hover{border-color:#2d6888}.home-footer-promo{width:min(1500px,94%)}
+@media(max-width:760px){.home-nav{padding:10px 12px;min-height:64px;gap:8px;flex-wrap:wrap}.home-brand{min-width:0;flex:1}.home-brand b{font-size:15px}.home-brand small{font-size:7px;letter-spacing:1.2px}.home-nav nav{order:3;width:100%;overflow-x:auto;justify-content:flex-start;scrollbar-width:none}.home-nav nav::-webkit-scrollbar{display:none}.home-nav nav a{padding:10px 9px;font-size:12px}.home-login{padding:8px 10px;font-size:13px}.mine-hero{min-height:370px;padding:20px 8px;background-position:center}.mine-brand{left:5%;top:24px}.mine-logo{font-size:42px}.mine-brand b{font-size:19px}.mine-brand span{font-size:8px;letter-spacing:2px}.mine-flag{right:4%;top:26px;width:110px;padding:10px}.mine-flag b{font-size:10px}.flag-mark{font-size:25px}.countdown-card{width:94vw;padding:20px 8px}.countdown-grid{gap:5px;margin-top:12px}.count-box{padding:11px 4px 9px}.count-box strong{font-size:30px}.count-box span{font-size:8px}.home-cards{grid-template-columns:1fr 1fr;width:94%;gap:9px;padding-top:14px}.home-card{min-height:100px;padding:12px;gap:9px}.home-card>span{width:42px;height:42px;font-size:22px}.home-card b{font-size:15px}.home-card small{font-size:10px}.home-card i{width:30px;height:30px;font-size:18px}}
+@media(max-width:430px){.home-cards{grid-template-columns:1fr}.mine-hero{min-height:300px}.count-box strong{font-size:25px}.mine-flag{display:none}}
