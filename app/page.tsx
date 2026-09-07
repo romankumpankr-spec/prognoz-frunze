@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import "./home.css";
 
 const target = new Date("2026-09-08T16:45:00+03:00").getTime();
 
