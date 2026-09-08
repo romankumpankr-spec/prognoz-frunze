@@ -4,49 +4,44 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "../../lib/supabase/client";
 
-type OrderItem = { id: string; display_name: string; position: number };
-type Participant = { id: string; display_name: string; role: "player" | "admin" };
-type DraftStatus = { started:boolean; finished:boolean; current_pick:number; total_picks:number; round_number:number; current_user_id:string|null; current_user_name:string|null; your_turn:boolean; player_order:OrderItem[]; own_picks:string[]; available_teams:string[]; picked_count:number; participant_count:number; };
+type OrderItem={id:string;display_name:string;position:number};
+type Participant={id:string;display_name:string;role:"player"|"admin"};
+type DraftStatus={started:boolean;finished:boolean;current_pick:number;total_picks:number;round_number:number;current_user_id:string|null;current_user_name:string|null;your_turn:boolean;player_order:OrderItem[];own_picks:string[];available_teams:string[];picked_count:number;participant_count:number};
+type PlayerStanding={user_id:string;display_name:string;teams_count:number;match_points:number;goals_for:number;goals_against:number;goal_difference:number;top8_bonus:number;total_points:number};
+type TeamStanding={user_id:string;team_name:string;pick_number:number;match_points:number;goals_for:number;goals_against:number;goal_difference:number;top8_bonus:number;total_points:number;final_rank:number|null};
+type Fixture={id:number;matchday:number;home_team:string;away_team:string;home_goals:number|null;away_goals:number|null;kickoff_date:string};
 
-export default function TeamsPage() {
-  const supabase=createClient(); const router=useRouter();
-  const [userId,setUserId]=useState(""); const [profile,setProfile]=useState<{display_name:string;role:"player"|"admin"}|null>(null);
-  const [status,setStatus]=useState<DraftStatus|null>(null); const [participants,setParticipants]=useState<Participant[]>([]); const [selected,setSelected]=useState<string[]>([]);
-  const [message,setMessage]=useState(""); const [loading,setLoading]=useState(true); const [picking,setPicking]=useState(false); const [starting,setStarting]=useState(false);
-
-  async function load(){
-    const {data:{user}}=await supabase.auth.getUser(); if(!user){router.replace("/login");return;} setUserId(user.id);
-    const [{data:p},{data:s,error},{data:people}]=await Promise.all([
-      supabase.from("profiles").select("display_name,role").eq("id",user.id).single(),
-      supabase.rpc("team_draft_status"),
-      supabase.from("profiles").select("id,display_name,role").order("display_name")
-    ]);
-    setProfile(p??null); setParticipants((people??[]) as Participant[]); if(error)setMessage(error.message); else {setStatus(s as DraftStatus); if((s as DraftStatus)?.player_order?.length) setSelected((s as DraftStatus).player_order.map(x=>x.id));}
-    setLoading(false);
-  }
-  useEffect(()=>{load();},[]);
-  const currentOrder=useMemo(()=>status?.player_order.map((p,i)=>({...p,isCurrent:p.id===status.current_user_id,isMe:p.id===userId,place:i+1}))??[],[status,userId]);
-
-  function toggleParticipant(id:string){setSelected(x=>x.includes(id)?x.filter(v=>v!==id):x.length<6?[...x,id]:x);}
-  async function startDraft(){
-    if(selected.length<1||selected.length>6){setMessage("Выберите от 1 до 6 участников.");return;}
-    if(!confirm(`Участвуют ${selected.length} человек. Провести жребьевку?`))return;
-    setStarting(true);setMessage("");
-    const {data,error}=await supabase.rpc("start_team_draft",{p_participant_ids:selected}); setStarting(false);
-    if(error)setMessage(error.message); else {setStatus(data as DraftStatus);setMessage("Жеребьевка проведена. Начался первый выбор.");}
-  }
-  async function pick(team:string){if(!status?.your_turn||picking)return;setPicking(true);setMessage("");const {data,error}=await supabase.rpc("make_team_draft_pick",{p_team_name:team});setPicking(false);if(error)setMessage(error.message);else{setStatus(data as DraftStatus);setMessage(`Выбрано: ${team}`);}}
-  async function logout(){await supabase.auth.signOut();router.replace("/");}
-  if(loading)return <main className="page"><div className="container"><section className="card"><p>Загрузка турнира…</p></section></div></main>;
-
-  return <main className="page"><div className="container">
-    <header className="header"><div className="logo">ПРОГНОЗ<span>-ФРУНЗЕ</span></div><div className="top-actions"><span className="badge">{profile?.display_name??"Участник"}</span>{profile?.role==="admin"&&<button className="text-button" onClick={()=>router.push("/admin/teams")}>Админка 6 команд</button>}<button className="text-button" onClick={()=>router.push("/dashboard")}>Прогнозы</button><button className="text-button" onClick={logout}>Выйти</button></div></header>
-    <section className="card team-hero"><span className="eyebrow">Отдельный турнир</span><h1>👕 6 команд</h1><p>Перед жребьевкой администратор отмечает участников галочками. Каждый выбранный участник получает ровно 6 команд. Порядок затем определяется случайно, а выбор идет змейкой.</p>
-      <div className="team-counter"><strong>{status?.started?`${status.picked_count}/${status.total_picks}`:`${selected.length}/6`}</strong><span>{!status?.started?"Выберите участников для турнира":""}{status?.started&&(status.finished?"Все команды распределены":status.your_turn?`Ваш ход — выбор №${status.current_pick}`:`Сейчас выбирает ${status.current_user_name??"участник"}`)}</span></div>
-      {profile?.role==="admin"&&!status?.started&&<div className="participant-picker"><h2>👥 Кто участвует?</h2><p className="badge">Отметьте галочками от 1 до 6 человек. Остальные не будут участвовать в этом турнире.</p><div className="participant-list">{participants.map(p=><label className="participant-check" key={p.id}><input type="checkbox" checked={selected.includes(p.id)} onChange={()=>toggleParticipant(p.id)}/><span>{p.display_name}</span></label>)}</div><button className="cta team-submit" disabled={starting||selected.length<1} onClick={startDraft}>{starting?"Проводим жребий…":"🎲 Провести жребьевку"}</button></div>}
-      {message&&<p className="status-line">{message}</p>}
-    </section>
-    {status?.started&&<><section className="card" style={{marginTop:16}}><div className="section-heading"><div><h2>🎲 Порядок выбора</h2><p className="badge">Порядок определяется случайно один раз в начале турнира.</p></div><span className="badge">Раунд {Math.min(status.round_number,6)} из 6</span></div><div className="draft-order-grid">{currentOrder.map(p=><div key={p.id} className={`draft-order-item ${p.isCurrent?"current":""} ${p.isMe?"me":""}`}><span>{p.place}</span><b>{p.display_name}</b>{p.isCurrent&&<em>ХОД</em>}</div>)}</div></section>
-      <div className="team-layout"><section className="card"><div className="section-heading"><div><h2>{status.your_turn?"Ваш выбор":"Доступные команды"}</h2><p className="badge">Выбранные другими команды и команды, играющие с вашими командами, здесь не показываются.</p></div><span className="badge">Доступно: {status.available_teams.length}</span></div><div className="team-grid">{status.available_teams.map(team=><button key={team} className="team-option" disabled={!status.your_turn||picking} onClick={()=>pick(team)}><span>○</span>{team}</button>)}</div>{status.your_turn&&<p className="badge" style={{marginTop:12}}>Нажми на одну команду — выбор сразу фиксируется.</p>}</section><aside className="card"><h2>Мои команды</h2>{status.own_picks.length===0?<p className="badge">Пока ничего не выбрано.</p>:<ol className="selected-list">{status.own_picks.map(t=><li key={t}>{t}</li>)}</ol>}<div className="mini-stat"><strong>{status.own_picks.length}/6</strong><span>ваших команд выбрано</span></div><p className="badge" style={{marginTop:14}}>После каждого выбора очередь автоматически переходит по змейке.</p></aside></div></>}
-  </div></main>;
+export default function TeamsPage(){
+ const supabase=createClient();const router=useRouter();
+ const [userId,setUserId]=useState("");const [profile,setProfile]=useState<Participant|null>(null);const [status,setStatus]=useState<DraftStatus|null>(null);const [participants,setParticipants]=useState<Participant[]>([]);const [selected,setSelected]=useState<string[]>([]);
+ const [players,setPlayers]=useState<PlayerStanding[]>([]);const [teams,setTeams]=useState<TeamStanding[]>([]);const [fixtures,setFixtures]=useState<Fixture[]>([]);
+ const [message,setMessage]=useState("");const [loading,setLoading]=useState(true);const [picking,setPicking]=useState(false);const [starting,setStarting]=useState(false);
+ async function load(){
+  const {data:{user}}=await supabase.auth.getUser();if(!user){router.replace("/login");return;}setUserId(user.id);
+  const [{data:p},{data:s,error},{data:people},{data:ps},{data:ts},{data:fx}]=await Promise.all([
+   supabase.from("profiles").select("id,display_name,role").eq("id",user.id).single(),supabase.rpc("team_draft_status"),supabase.from("profiles").select("id,display_name,role").order("display_name"),supabase.from("team_draft_player_standings").select("*").order("total_points",{ascending:false}).order("goal_difference",{ascending:false}).order("display_name"),supabase.from("team_draft_standings").select("*").order("pick_number"),supabase.from("team_draft_fixtures").select("id,matchday,home_team,away_team,home_goals,away_goals,kickoff_date").order("matchday").order("kickoff_date").order("id")
+  ]);
+  setProfile(p as Participant|null);setParticipants((people??[]) as Participant[]);if(error)setMessage(error.message);else{const st=s as DraftStatus;setStatus(st);if(st?.player_order?.length)setSelected(st.player_order.map(x=>x.id));}setPlayers((ps??[]) as PlayerStanding[]);setTeams((ts??[]) as TeamStanding[]);setFixtures((fx??[]) as Fixture[]);setLoading(false);
+ }
+ useEffect(()=>{load();const timer=window.setInterval(load,30000);const channel=supabase.channel("team-results-live").on("postgres_changes",{event:"*",schema:"public",table:"team_draft_fixtures"},()=>load()).subscribe();return()=>{window.clearInterval(timer);supabase.removeChannel(channel);};},[]);
+ const currentOrder=useMemo(()=>status?.player_order.map((p,i)=>({...p,isCurrent:p.id===status.current_user_id,isMe:p.id===userId,place:i+1}))??[],[status,userId]);
+ function toggleParticipant(id:string){setSelected(x=>x.includes(id)?x.filter(v=>v!==id):x.length<6?[...x,id]:x);}
+ async function startDraft(){if(selected.length<1||selected.length>6){setMessage("Выберите от 1 до 6 участников.");return;}if(!confirm(`Участвуют ${selected.length} человек. Провести жребьевку?`))return;setStarting(true);setMessage("");const {data,error}=await supabase.rpc("start_team_draft",{p_participant_ids:selected});setStarting(false);if(error)setMessage(error.message);else{setStatus(data as DraftStatus);setMessage("Жеребьевка проведена. Начался первый выбор.");await load();}}
+ async function pick(team:string){if(!status?.your_turn||picking)return;setPicking(true);setMessage("");const {data,error}=await supabase.rpc("make_team_draft_pick",{p_team_name:team});setPicking(false);if(error)setMessage(error.message);else{setStatus(data as DraftStatus);setMessage(`Выбрано: ${team}`);await load();}}
+ async function logout(){await supabase.auth.signOut();router.replace("/");}
+ const teamsByPlayer=useMemo(()=>players.map(p=>({...p,items:teams.filter(t=>t.user_id===p.user_id).sort((a,b)=>a.pick_number-b.pick_number)})),[players,teams]);
+ const played=fixtures.filter(f=>f.home_goals!==null&&f.away_goals!==null).length;
+ if(loading)return <main className="page"><div className="container"><section className="card"><p>Загрузка турнира…</p></section></div></main>;
+ return <main className="page"><div className="container">
+  <header className="header"><div className="logo">ПРОГНОЗ<span>-ФРУНЗЕ</span></div><div className="top-actions"><span className="badge">{profile?.display_name??"Участник"}</span>{profile?.role==="admin"&&<button className="text-button" onClick={()=>router.push("/admin/teams")}>Админка 6 команд</button>}<button className="text-button" onClick={()=>router.push("/dashboard")}>Прогнозы</button><button className="text-button" onClick={logout}>Выйти</button></div></header>
+  <section className="card team-hero"><span className="eyebrow">Отдельный турнир</span><h1>👕 6 команд</h1><p>Каждый участник получает 6 команд. Очки начисляются автоматически по реальным матчам: победа 3, ничья 2, поражение 0. Голы и разница голов учитываются отдельно. После лиговой фазы команде из топ-8 добавляется 6 очков.</p><div className="team-counter"><strong>{status?.started?`${status.picked_count}/${status.total_picks}`:`${selected.length}/6`}</strong><span>{!status?.started?"Выберите участников для турнира":status.finished?"Все команды распределены":status.your_turn?`Ваш ход — выбор №${status.current_pick}`:`Сейчас выбирает ${status.current_user_name??"участник"}`}</span></div>
+   {profile?.role==="admin"&&!status?.started&&<div className="participant-picker"><h2>👥 Кто участвует?</h2><p className="badge">Отметьте галочками от 1 до 6 человек. Остальные не участвуют в этом турнире.</p><div className="participant-list">{participants.map(p=><label className="participant-check" key={p.id}><input type="checkbox" checked={selected.includes(p.id)} onChange={()=>toggleParticipant(p.id)}/><span>{p.display_name}</span></label>)}</div><button className="cta team-submit" disabled={starting||selected.length<1} onClick={startDraft}>{starting?"Проводим жребий…":"🎲 Провести жеребьевку"}</button></div>}{message&&<p className="status-line">{message}</p>}
+  </section>
+  {status?.started&&<>
+   <section className="card"><div className="section-heading"><div><h2>🎲 Порядок выбора</h2><p className="badge">Порядок определяется случайно один раз в начале турнира.</p></div><span className="badge">Раунд {Math.min(status.round_number,6)} из 6</span></div><div className="draft-order-grid">{currentOrder.map(p=><div key={p.id} className={`draft-order-item ${p.isCurrent?"current":""} ${p.isMe?"me":""}`}><span>{p.place}</span><b>{p.display_name}</b>{p.isCurrent&&<em>ХОД</em>}</div>)}</div></section>
+   <section className="card team-board-card"><div className="section-heading"><div><h2>🏆 Общая таблица</h2><p className="badge">Обновляется автоматически после внесения каждого результата.</p></div><span className="badge">Матчи: {played}/{fixtures.length}</span></div><div className="team-leaderboard">{players.map((p,i)=><div className="team-leader-row" key={p.user_id}><strong>{i+1}</strong><b>{p.display_name}</b><span>{p.match_points} оч.</span><span>{p.goal_difference>=0?`+${p.goal_difference}`:p.goal_difference} гол.</span><em>{p.top8_bonus?`+${p.top8_bonus} топ-8`:""}</em><strong>{p.total_points}</strong></div>)}</div></section>
+   <section className="card"><div className="section-heading"><div><h2>👥 Кто какие команды выбрал</h2><p className="badge">Все 6 команд каждого участника и их текущие очки.</p></div></div><div className="team-owner-grid">{teamsByPlayer.map(p=><div className="team-owner-card" key={p.user_id}><div className="team-owner-head"><b>{p.display_name}</b><strong>{p.total_points} оч.</strong></div><ol>{p.items.map(t=><li key={t.team_name}><span>{t.team_name}</span><small>{t.total_points} оч. · {t.goals_for}:{t.goals_against} · {t.goal_difference>=0?`+${t.goal_difference}`:t.goal_difference}</small></li>)}</ol></div>)}</div></section>
+   <section className="card"><div className="section-heading"><div><h2>⚽ Результаты лиговой фазы</h2><p className="badge">Реальные матчи Лиги чемпионов. Результат вводит администратор, очки пересчитываются базой автоматически.</p></div></div><div className="fixture-groups">{Array.from({length:8},(_,i)=>i+1).map(md=>{const list=fixtures.filter(f=>f.matchday===md);const done=list.filter(f=>f.home_goals!==null).length;return <details key={md} className="fixture-day" open={md===1}><summary><b>Тур {md}</b><span>{done}/{list.length} сыграно</span></summary><div className="fixture-list">{list.map(f=><div className="fixture-row" key={f.id}><span>{f.home_team}</span><b>{f.home_goals===null?"—":`${f.home_goals} : ${f.away_goals}`}</b><span>{f.away_team}</span></div>)}</div></details>})}</div></section>
+  </>}
+ </div></main>;
 }
