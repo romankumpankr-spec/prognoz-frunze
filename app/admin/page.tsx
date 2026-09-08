@@ -9,24 +9,26 @@ type Match = { id: string; round_id: string; home_team: string; away_team: strin
 type Participant = { id: string; display_name: string; role: "player" | "admin" };
 type Prediction = { match_id: string; user_id: string; home_score: number; away_score: number; submitted_at: string | null };
 type Result = { match_id: string; user_id: string; points: number | null };
+type VisitStats = { total_visits: number; today: number; last_7_days: number; last_30_days: number };
 
 export default function AdminPage() {
   const supabase = createClient(); const router = useRouter();
-  const [rounds,setRounds]=useState<Round[]>([]); const [matches,setMatches]=useState<Match[]>([]); const [participants,setParticipants]=useState<Participant[]>([]); const [predictions,setPredictions]=useState<Prediction[]>([]); const [results,setResults]=useState<Result[]>([]); const [allowed,setAllowed]=useState(false);
+  const [rounds,setRounds]=useState<Round[]>([]); const [matches,setMatches]=useState<Match[]>([]); const [participants,setParticipants]=useState<Participant[]>([]); const [predictions,setPredictions]=useState<Prediction[]>([]); const [results,setResults]=useState<Result[]>([]); const [allowed,setAllowed]=useState(false); const [visitStats,setVisitStats]=useState<VisitStats|null>(null);
   const [roundName,setRoundName]=useState(""); const [home,setHome]=useState(""); const [away,setAway]=useState(""); const [kickoff,setKickoff]=useState(""); const [roundId,setRoundId]=useState(""); const [status,setStatus]=useState(""); const [editRound,setEditRound]=useState<string|null>(null); const [editMatch,setEditMatch]=useState<string|null>(null);
 
   async function load(){
     const {data:{user}}=await supabase.auth.getUser(); if(!user)return router.replace("/login");
     const {data:profile}=await supabase.from("profiles").select("role").eq("id",user.id).single(); if(profile?.role!=="admin")return router.replace("/dashboard");
     setAllowed(true);
-    const [{data:rs},{data:ms},{data:ps},{data:pr},{data:rr}]=await Promise.all([
+    const [{data:rs},{data:ms},{data:ps},{data:pr},{data:rr},{data:vs,error:vsError}]=await Promise.all([
       supabase.from("rounds").select("id,name,sort_order").order("sort_order"),
       supabase.from("matches").select("id,round_id,home_team,away_team,kickoff_at,home_score,away_score").order("kickoff_at"),
       supabase.from("profiles").select("id,display_name,role").order("display_name"),
       supabase.from("predictions").select("match_id,user_id,home_score,away_score,submitted_at").order("submitted_at"),
-      supabase.from("prediction_results").select("match_id,user_id,points")
+      supabase.from("prediction_results").select("match_id,user_id,points"),
+      supabase.rpc("admin_site_visit_stats")
     ]);
-    setRounds(rs??[]);setMatches(ms??[]);setParticipants(ps??[]);setPredictions(pr??[]);setResults(rr??[]);if(!roundId&&rs?.[0])setRoundId(rs[0].id);
+    setRounds(rs??[]);setMatches(ms??[]);setParticipants(ps??[]);setPredictions(pr??[]);setResults(rr??[]);setVisitStats(vsError?null:vs as VisitStats);if(!roundId&&rs?.[0])setRoundId(rs[0].id);
   }
   useEffect(()=>{load(); // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
@@ -49,6 +51,8 @@ export default function AdminPage() {
   return <main className="page"><div className="container">
     <header className="header"><div className="logo">ПРОГНОЗ<span>-ФРУНЗЕ</span></div><button className="badge" onClick={()=>router.push("/dashboard")} style={{background:"none",border:0,cursor:"pointer"}}>← В кабинет</button></header>
     <h1>Панель администратора</h1><p className="badge">Управление турами, матчами, прогнозами и фактическими результатами.</p>
+
+    <section className="card" style={{marginTop:20}}><h2 style={{marginTop:0}}>👁 Посещения сайта</h2><div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12}}>{[["Всего",visitStats?.total_visits??0],["Сегодня",visitStats?.today??0],["За 7 дней",visitStats?.last_7_days??0],["За 30 дней",visitStats?.last_30_days??0]].map(([label,value])=><div key={label as string} style={{padding:16,border:"1px solid var(--border)",borderRadius:14}}><div className="badge">{label}</div><div style={{fontSize:28,fontWeight:800,marginTop:6}}>{value}</div></div>)}</div><p className="badge" style={{marginBottom:0}}>Считается один визит за сессию браузера. Данные видит только администратор.</p></section>
 
     <section className="card" style={{marginTop:20}}><h2 style={{marginTop:0}}>Статус туров</h2>{rounds.length===0?<p className="badge">Туров пока нет.</p>:rounds.map(r=>{const st=roundStats(r.id);return <div key={r.id} style={{display:"grid",gridTemplateColumns:"1fr auto auto",gap:10,alignItems:"center",padding:"10px 0",borderBottom:"1px solid var(--border)"}}><b>{r.name}</b><span className="badge">Отправили: {st.sent} · полностью: {st.complete}</span><div style={{display:"flex",gap:6}}><button className="badge" onClick={()=>startRoundEdit(r)} style={{cursor:"pointer",background:"none"}}>Изменить</button><button className="badge" onClick={()=>deleteRound(r.id)} style={{cursor:"pointer",background:"none"}}>Удалить</button></div></div>})}</section>
 
