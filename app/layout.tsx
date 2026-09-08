@@ -3,6 +3,7 @@ import "./globals.css";
 import "./site-ui.css";
 import AppNav from "../components/app-nav";
 import LanguageSwitcher from "../components/language-switcher";
+import VisitCounter from "../components/visit-counter";
 
 export const metadata: Metadata = {
   title: "Прогноз-Фрунзе",
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="ru">
-      <body><LanguageSwitcher /><AppNav />{children}</body>
+      <body><VisitCounter /><LanguageSwitcher /><AppNav />{children}</body>
     </html>
   );
 }
