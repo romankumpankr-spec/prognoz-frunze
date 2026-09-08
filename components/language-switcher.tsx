@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createClient } from "../lib/supabase/client";
 
 type Lang = "ru" | "uk";
 
@@ -42,6 +43,54 @@ export default function LanguageSwitcher() {
     const observer = new MutationObserver(apply);
     observer.observe(document.body, { childList:true, subtree:true, characterData:true });
     return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (window.location.pathname !== "/dashboard") return;
+    const supabase = createClient();
+    let ownerMap: Record<string,string> = {};
+    let stopped = false;
+
+    const applyOwners = () => {
+      if (stopped || Object.keys(ownerMap).length === 0) return;
+      const cards = document.querySelectorAll<HTMLElement>(".match-card h3");
+      cards.forEach((heading) => {
+        const firstText = heading.childNodes[0]?.textContent?.trim() ?? "";
+        const textNodes = Array.from(heading.childNodes).filter(n => n.nodeType === Node.TEXT_NODE) as Text[];
+        const home = firstText;
+        const away = textNodes.length > 1 ? (textNodes[textNodes.length - 1].textContent?.trim() ?? "") : "";
+        const homeOwner = ownerMap[home];
+        const awayOwner = ownerMap[away];
+        if (!homeOwner && !awayOwner) return;
+        const marker = `${homeOwner ?? ""}|${awayOwner ?? ""}`;
+        if (heading.dataset.ownersApplied === marker) return;
+        const separator = document.createElement("span");
+        separator.textContent = " — ";
+        const homeNode = document.createTextNode(homeOwner ? `${home} (${homeOwner})` : home);
+        const awayNode = document.createTextNode(awayOwner ? `${away} (${awayOwner})` : away);
+        heading.replaceChildren(homeNode, separator, awayNode);
+        heading.dataset.ownersApplied = marker;
+      });
+    };
+
+    supabase.rpc("team_draft_public_board").then(({ data }) => {
+      if (stopped) return;
+      const board = data as { teams?: Array<{ team_name:string; user_id:string }> } | null;
+      const teamRows = board?.teams ?? [];
+      if (!teamRows.length) return;
+      const ids = Array.from(new Set(teamRows.map(t => t.user_id)));
+      supabase.from("profiles").select("id,display_name").in("id", ids).then(({ data: people }) => {
+        if (stopped) return;
+        const names: Record<string,string> = {};
+        for (const person of people ?? []) names[person.id] = person.display_name;
+        ownerMap = Object.fromEntries(teamRows.map(t => [t.team_name, names[t.user_id] ?? ""]));
+        applyOwners();
+      });
+    });
+
+    const observer = new MutationObserver(applyOwners);
+    observer.observe(document.body, { childList:true, subtree:true });
+    return () => { stopped = true; observer.disconnect(); };
   }, []);
 
   function change(next: Lang) {
