@@ -32,28 +32,54 @@ function normalize(value: string) {
 }
 
 const aliases: Record<string, string[]> = {
-  "штуtgарт": ["vfbstuttgart", "stuttgart"],
-  "штуgart": ["vfbstuttgart", "stuttgart"],
-  "викинг": ["viking", "vikingfk"],
-  "псж": ["parissaintgermain", "psg"],
-  "мансити": ["manchestercity"],
+  "брюгге": ["clubbrugge", "brugge"],
+  "астонвилла": ["astonvilla"],
+  "аекафины": ["aekathens", "aek"],
+  "ласк": ["lask", "lasklinz"],
   "реал": ["realmadrid"],
   "интер": ["inter", "intermilan"],
   "боруссиядортмунд": ["borussiadortmund", "dortmund"],
   "вильярреал": ["villarreal"],
+  "порту": ["porto", "fcporto"],
+  "мансити": ["mancity", "manchestercity"],
+  "лиль": ["lille", "losc"] ,
+  "бетис": ["realbetis", "betis"],
   "барселона": ["barcelona"],
   "фейеноорд": ["feyenoord"],
-  "наполі": ["napoli"],
+  "штутгарт": ["vfbstuttgart", "stuttgart"],
+  "викинг": ["viking", "vikingfk"],
+  "псж": ["parissaintgermain", "psg"],
+  "слован": ["slovanbratislava", "slovan"],
+  "ливepуль": ["liverpool"],
+  "ливерпуль": ["liverpool"],
+  "атлетико": ["atleticomadrid", "atletico"],
+  "спортинг": ["sportingcp", "sportinglisbon"],
+  "галатасарай": ["galatasaray"],
   "наполи": ["napoli"],
   "арсенал": ["arsenal"],
+  "псв": ["psveindhoven", "psv"],
+  "шахтер": ["shakhtardonetsk", "shakhtar"],
+  "шахтёр": ["shakhtardonetsk", "shakhtar"],
+  "фенербахче": ["fenerbahce"],
+  "рома": ["asroma", "roma"],
   "бавария": ["bayernmunich", "bayern"],
+  "будеглимт": ["bodo", "bodo glimt"],
+  "мю": ["manchesterunited", "manutd"],
+  "сабах": ["sabah", "sabahfk"],
+  "славия": ["slaviaprague", "slavia"],
+  "ланс": ["lens"],
+  "комо": ["como"],
+  "лейпциг": ["rbleipzig", "leipzig"],
 };
 
 function teamMatches(localName: string, apiName: string) {
   const local = normalize(localName);
   const api = normalize(apiName);
   if (local === api || local.includes(api) || api.includes(local)) return true;
-  return (aliases[local] ?? []).some(alias => api === alias || api.includes(alias) || alias.includes(api));
+  return (aliases[local] ?? []).some(alias => {
+    const normalizedAlias = normalize(alias);
+    return api === normalizedAlias || api.includes(normalizedAlias) || normalizedAlias.includes(api);
+  });
 }
 
 function findFixture(fixtures: ApiFixture[], home: string, away: string) {
