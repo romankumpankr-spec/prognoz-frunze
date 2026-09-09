@@ -71,7 +71,7 @@ export function LiveMatch({ home, away, kickoff }: { home: string; away: string;
 
   useEffect(() => {
     if (!open || !data?.isLive) return;
-    const timer = window.setInterval(load, 30000);
+    const timer = window.setInterval(load, 120000);
     return () => window.clearInterval(timer);
   }, [open, data?.isLive, load]);
 
@@ -94,7 +94,7 @@ export function LiveMatch({ home, away, kickoff }: { home: string; away: string;
                 <strong>{data.status.short === "FT" || data.status.short === "AET" ? "Завершён" : data.status.long}</strong>
                 <strong style={{ fontSize: 20 }}>{data.homeScore ?? "—"}:{data.awayScore ?? "—"}</strong>
               </div>
-              {data.isLive && <div className="badge" style={{ marginBottom: 8 }}>🔴 LIVE · обновление каждые 30 секунд</div>}
+              {data.isLive && <div className="badge" style={{ marginBottom: 8 }}>🔴 LIVE · обновление примерно раз в 2 минуты</div>}
               {!data.events.length ? <div className="badge">Событий пока нет.</div> : (
                 <div style={{ display: "grid", gap: 6 }}>
                   {data.events.map((event, index) => (
