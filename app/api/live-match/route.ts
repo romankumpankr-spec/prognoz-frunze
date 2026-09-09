@@ -32,44 +32,45 @@ function normalize(value: string) {
 }
 
 const aliases: Record<string, string[]> = {
+  "штутгарт": ["vfbstuttgart", "stuttgart"],
+  "штуtgарт": ["vfbstuttgart", "stuttgart"],
+  "штуgart": ["vfbstuttgart", "stuttgart"],
+  "викинг": ["viking", "vikingfk"],
+  "псж": ["parissaintgermain", "psg"],
+  "слован": ["slovanbratislava"],
+  "мансити": ["manchestercity", "mancity"],
+  "реал": ["realmadrid"],
+  "интер": ["inter", "intermilan", "internazionale"],
+  "боруссиядортмунд": ["borussiadortmund", "dortmund"],
+  "вильярреал": ["villarreal"],
+  "барселона": ["barcelona", "fcbarcelona"],
+  "фейеноорд": ["feyenoord"],
+  "наполі": ["napoli"],
+  "наполи": ["napoli"],
+  "арсенал": ["arsenal"],
+  "бавария": ["bayernmunich", "bayernmunchen", "bayern"],
+  "будеглимт": ["bodo/glimt", "bodoglimt"],
+  "ливерпуль": ["liverpool"],
+  "атлетико": ["atleticomadrid", "atleticomadrid"],
+  "спортинг": ["sportingcp", "sportinglisbon"],
+  "галатасарай": ["galatasaray"],
+  "псв": ["psveindhoven", "psv"],
+  "шахтер": ["shakhtardonetsk", "shakhtardonetsk"],
+  "фенербахче": ["fenerbahce"],
+  "рома": ["asroma", "roma"],
+  "мю": ["manchesterunited", "manutd"],
+  "сабах": ["sabah"],
+  "славия": ["slaviaprague", "slaviapraha"],
+  "ланс": ["lens", "rclens"],
+  "комо": ["como"],
+  "лейпциг": ["rbleipzig", "leipzig"],
   "брюгге": ["clubbrugge", "brugge"],
   "астонвилла": ["astonvilla"],
   "аекафины": ["aekathens", "aek"],
-  "ласк": ["lask", "lasklinz"],
-  "реал": ["realmadrid"],
-  "интер": ["inter", "intermilan"],
-  "боруссиядортмунд": ["borussiadortmund", "dortmund"],
-  "вильярреал": ["villarreal"],
+  "ласк": ["lask"],
   "порту": ["porto", "fcporto"],
-  "мансити": ["mancity", "manchestercity"],
-  "лиль": ["lille", "losc"] ,
+  "лилль": ["lille", "lilleosc"],
   "бетис": ["realbetis", "betis"],
-  "барселона": ["barcelona"],
-  "фейеноорд": ["feyenoord"],
-  "штутгарт": ["vfbstuttgart", "stuttgart"],
-  "викинг": ["viking", "vikingfk"],
-  "псж": ["parissaintgermain", "psg"],
-  "слован": ["slovanbratislava", "slovan"],
-  "ливepуль": ["liverpool"],
-  "ливерпуль": ["liverpool"],
-  "атлетико": ["atleticomadrid", "atletico"],
-  "спортинг": ["sportingcp", "sportinglisbon"],
-  "галатасарай": ["galatasaray"],
-  "наполи": ["napoli"],
-  "арсенал": ["arsenal"],
-  "псв": ["psveindhoven", "psv"],
-  "шахтер": ["shakhtardonetsk", "shakhtar"],
-  "шахтёр": ["shakhtardonetsk", "shakhtar"],
-  "фенербахче": ["fenerbahce"],
-  "рома": ["asroma", "roma"],
-  "бавария": ["bayernmunich", "bayern"],
-  "будеглимт": ["bodo", "bodo glimt"],
-  "мю": ["manchesterunited", "manutd"],
-  "сабах": ["sabah", "sabahfk"],
-  "славия": ["slaviaprague", "slavia"],
-  "ланс": ["lens"],
-  "комо": ["como"],
-  "лейпциг": ["rbleipzig", "leipzig"],
 };
 
 function teamMatches(localName: string, apiName: string) {
@@ -77,8 +78,8 @@ function teamMatches(localName: string, apiName: string) {
   const api = normalize(apiName);
   if (local === api || local.includes(api) || api.includes(local)) return true;
   return (aliases[local] ?? []).some(alias => {
-    const normalizedAlias = normalize(alias);
-    return api === normalizedAlias || api.includes(normalizedAlias) || normalizedAlias.includes(api);
+    const a = normalize(alias);
+    return api === a || api.includes(a) || a.includes(api);
   });
 }
 
@@ -92,12 +93,12 @@ async function apiGet(path: string, params: Record<string, string>) {
   if (!key) throw new Error("FOOTBALL_API_KEY не задан в Render");
   const url = new URL(`${API_URL}${path}`);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  const response = await fetch(url, {
-    headers: { "x-apisports-key": key, Accept: "application/json" },
-    cache: "no-store",
-  });
+  const response = await fetch(url, { headers: { "x-apisports-key": key, Accept: "application/json" }, cache: "no-store" });
   const body = await response.json();
-  if (!response.ok || body.errors?.length) throw new Error(body.errors?.join(", ") || `API HTTP ${response.status}`);
+  if (!response.ok || (body.errors && Object.keys(body.errors).length)) {
+    const errors = typeof body.errors === "string" ? body.errors : JSON.stringify(body.errors);
+    throw new Error(errors || `API HTTP ${response.status}`);
+  }
   return body;
 }
 
@@ -108,21 +109,38 @@ export async function GET(request: NextRequest) {
     const kickoff = request.nextUrl.searchParams.get("kickoff")?.trim();
     if (!home || !away || !kickoff) return NextResponse.json({ error: "Не хватает home, away или kickoff" }, { status: 400 });
 
-    const date = new Date(kickoff).toISOString().slice(0, 10);
-    const schedule = await apiGet("/fixtures", { league: String(UCL_LEAGUE_ID), season: String(UCL_SEASON), date });
-    let fixture = findFixture(schedule.response ?? [], home, away) as ApiFixture | undefined;
+    const kickoffDate = new Date(kickoff);
+    const date = kickoffDate.toISOString().slice(0, 10);
+    const now = Date.now();
+    const nearKickoff = Math.abs(now - kickoffDate.getTime()) <= 4 * 60 * 60 * 1000;
+    let fixture: ApiFixture | undefined;
 
-    if (!fixture) {
-      const nextDate = new Date(new Date(`${date}T00:00:00Z`).getTime() + 86400000).toISOString().slice(0, 10);
-      const previousDate = new Date(new Date(`${date}T00:00:00Z`).getTime() - 86400000).toISOString().slice(0, 10);
-      const [previous, next] = await Promise.all([
-        apiGet("/fixtures", { league: String(UCL_LEAGUE_ID), season: String(UCL_SEASON), date: previousDate }),
-        apiGet("/fixtures", { league: String(UCL_LEAGUE_ID), season: String(UCL_SEASON), date: nextDate }),
-      ]);
-      fixture = findFixture([...(previous.response ?? []), ...(next.response ?? [])], home, away) as ApiFixture | undefined;
+    // Во время матча сначала используем live=2: API-Football рекомендует этот режим
+    // для livescore и событий текущих матчей.
+    if (nearKickoff) {
+      const live = await apiGet("/fixtures", { live: String(UCL_LEAGUE_ID) });
+      fixture = findFixture((live.response ?? []) as ApiFixture[], home, away);
     }
 
-    if (!fixture) return NextResponse.json({ error: "Матч не найден в API-Football", home, away }, { status: 404 });
+    // Для будущих и уже завершённых матчей берём расписание конкретной даты.
+    if (!fixture) {
+      const schedule = await apiGet("/fixtures", {
+        league: String(UCL_LEAGUE_ID),
+        season: String(UCL_SEASON),
+        date,
+        timezone: "Europe/Kyiv",
+      });
+      fixture = findFixture((schedule.response ?? []) as ApiFixture[], home, away);
+    }
+
+    // Если API не вернул матч по дате, один раз ищем по всему сезону.
+    // Это защищает нас от различий в часовом поясе/дате публикации расписания.
+    if (!fixture) {
+      const seasonFixtures = await apiGet("/fixtures", { league: String(UCL_LEAGUE_ID), season: String(UCL_SEASON) });
+      fixture = findFixture((seasonFixtures.response ?? []) as ApiFixture[], home, away);
+    }
+
+    if (!fixture) return NextResponse.json({ error: "Матч не найден в API-Football", home, away, date }, { status: 404 });
 
     const details = await apiGet("/fixtures", { ids: String(fixture.fixture.id) });
     const full = (details.response?.[0] ?? fixture) as ApiFixture;
