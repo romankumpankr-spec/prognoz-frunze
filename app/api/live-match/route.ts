@@ -23,54 +23,27 @@ type ApiFixture = {
   }>;
 };
 
+type CacheEntry = { expiresAt: number; data: unknown };
+const cache = new Map<string, CacheEntry>();
+
 function normalize(value: string) {
-  return value
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zа-яё0-9]/gi, "");
+  return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zа-яё0-9]/gi, "");
 }
 
 const aliases: Record<string, string[]> = {
-  "штутгарт": ["vfbstuttgart", "stuttgart"],
-  "штуtgарт": ["vfbstuttgart", "stuttgart"],
-  "штуgart": ["vfbstuttgart", "stuttgart"],
-  "викинг": ["viking", "vikingfk"],
-  "псж": ["parissaintgermain", "psg"],
-  "слован": ["slovanbratislava"],
-  "мансити": ["manchestercity", "mancity"],
-  "реал": ["realmadrid"],
-  "интер": ["inter", "intermilan", "internazionale"],
-  "боруссиядортмунд": ["borussiadortmund", "dortmund"],
-  "вильярреал": ["villarreal"],
-  "барселона": ["barcelona", "fcbarcelona"],
-  "фейеноорд": ["feyenoord"],
-  "наполі": ["napoli"],
-  "наполи": ["napoli"],
-  "арсенал": ["arsenal"],
-  "бавария": ["bayernmunich", "bayernmunchen", "bayern"],
-  "будеглимт": ["bodo/glimt", "bodoglimt"],
-  "ливерпуль": ["liverpool"],
-  "атлетико": ["atleticomadrid", "atleticomadrid"],
-  "спортинг": ["sportingcp", "sportinglisbon"],
-  "галатасарай": ["galatasaray"],
-  "псв": ["psveindhoven", "psv"],
-  "шахтер": ["shakhtardonetsk", "shakhtardonetsk"],
-  "фенербахче": ["fenerbahce"],
-  "рома": ["asroma", "roma"],
-  "мю": ["manchesterunited", "manutd"],
-  "сабах": ["sabah"],
-  "славия": ["slaviaprague", "slaviapraha"],
-  "ланс": ["lens", "rclens"],
-  "комо": ["como"],
-  "лейпциг": ["rbleipzig", "leipzig"],
-  "брюгге": ["clubbrugge", "brugge"],
-  "астонвилла": ["astonvilla"],
-  "аекафины": ["aekathens", "aek"],
-  "ласк": ["lask"],
-  "порту": ["porto", "fcporto"],
-  "лилль": ["lille", "lilleosc"],
-  "бетис": ["realbetis", "betis"],
+  "штутгарт": ["vfbstuttgart", "stuttgart"], "штуtgарт": ["vfbstuttgart", "stuttgart"], "штуgart": ["vfbstuttgart", "stuttgart"],
+  "викинг": ["viking", "vikingfk"], "псж": ["parissaintgermain", "psg"], "слован": ["slovanbratislava"],
+  "мансити": ["manchestercity", "mancity"], "реал": ["realmadrid"], "интер": ["inter", "intermilan", "internazionale"],
+  "боруссиядортмунд": ["borussiadortmund", "dortmund"], "вильярреал": ["villarreal"], "барселона": ["barcelona", "fcbarcelona"],
+  "фейеноорд": ["feyenoord"], "наполі": ["napoli"], "наполи": ["napoli"], "арсенал": ["arsenal"],
+  "бавария": ["bayernmunich", "bayernmunchen", "bayern"], "будеглимт": ["bodoglimt", "bodo"],
+  "ливерпуль": ["liverpool"], "атлетико": ["atleticomadrid"], "спортинг": ["sportingcp", "sportinglisbon"],
+  "галатасарай": ["galatasaray"], "псв": ["psveindhoven", "psv"], "шахтер": ["shakhtardonetsk"],
+  "фенербахче": ["fenerbahce"], "рома": ["asroma", "roma"], "мю": ["manchesterunited", "manutd"],
+  "сабах": ["sabah"], "славия": ["slaviaprague", "slaviapraha"], "ланс": ["lens", "rclens"],
+  "комо": ["como"], "лейпциг": ["rbleipzig", "leipzig"], "брюгге": ["clubbrugge", "brugge"],
+  "астонвилла": ["astonvilla"], "аекафины": ["aekathens", "aek"], "ласк": ["lask"], "порту": ["porto", "fcporto"],
+  "лилль": ["lille", "lilleosc"], "бетис": ["realbetis", "betis"],
 };
 
 function teamMatches(localName: string, apiName: string) {
@@ -109,20 +82,23 @@ export async function GET(request: NextRequest) {
     const kickoff = request.nextUrl.searchParams.get("kickoff")?.trim();
     if (!home || !away || !kickoff) return NextResponse.json({ error: "Не хватает home, away или kickoff" }, { status: 400 });
 
+    const cacheKey = `${normalize(home)}|${normalize(away)}`;
+    const cached = cache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return NextResponse.json(cached.data);
+
     const kickoffDate = new Date(kickoff);
     const date = kickoffDate.toISOString().slice(0, 10);
     const now = Date.now();
     const nearKickoff = Math.abs(now - kickoffDate.getTime()) <= 4 * 60 * 60 * 1000;
     let fixture: ApiFixture | undefined;
 
-    // Во время матча сначала используем live=2: API-Football рекомендует этот режим
-    // для livescore и событий текущих матчей.
+    // Для текущих матчей — один запрос live. Ответ live уже содержит счёт и события.
     if (nearKickoff) {
       const live = await apiGet("/fixtures", { live: String(UCL_LEAGUE_ID) });
       fixture = findFixture((live.response ?? []) as ApiFixture[], home, away);
     }
 
-    // Для будущих и уже завершённых матчей берём расписание конкретной даты.
+    // Для будущих/завершённых матчей — один запрос расписания конкретной даты.
     if (!fixture) {
       const schedule = await apiGet("/fixtures", {
         league: String(UCL_LEAGUE_ID),
@@ -133,19 +109,11 @@ export async function GET(request: NextRequest) {
       fixture = findFixture((schedule.response ?? []) as ApiFixture[], home, away);
     }
 
-    // Если API не вернул матч по дате, один раз ищем по всему сезону.
-    // Это защищает нас от различий в часовом поясе/дате публикации расписания.
-    if (!fixture) {
-      const seasonFixtures = await apiGet("/fixtures", { league: String(UCL_LEAGUE_ID), season: String(UCL_SEASON) });
-      fixture = findFixture((seasonFixtures.response ?? []) as ApiFixture[], home, away);
-    }
-
     if (!fixture) return NextResponse.json({ error: "Матч не найден в API-Football", home, away, date }, { status: 404 });
 
-    const details = await apiGet("/fixtures", { ids: String(fixture.fixture.id) });
-    const full = (details.response?.[0] ?? fixture) as ApiFixture;
-    const status = full.fixture.status.short;
-    const events = (full.events ?? []).map(event => ({
+    // В ответе /fixtures уже есть события; дополнительный запрос /fixtures?ids=... не нужен.
+    const status = fixture.fixture.status.short;
+    const events = (fixture.events ?? []).map(event => ({
       minute: event.time.elapsed,
       extra: event.time.extra ?? null,
       team: event.team?.name ?? "",
@@ -155,19 +123,24 @@ export async function GET(request: NextRequest) {
       detail: event.detail,
     }));
 
-    return NextResponse.json({
-      fixtureId: full.fixture.id,
-      home: full.teams.home.name,
-      away: full.teams.away.name,
-      homeScore: full.goals.home,
-      awayScore: full.goals.away,
-      status: full.fixture.status,
+    const data = {
+      fixtureId: fixture.fixture.id,
+      home: fixture.teams.home.name,
+      away: fixture.teams.away.name,
+      homeScore: fixture.goals.home,
+      awayScore: fixture.goals.away,
+      status: fixture.fixture.status,
       isLive: LIVE_STATUSES.has(status),
       events,
       updatedAt: new Date().toISOString(),
-    }, { headers: { "Cache-Control": "no-store" } });
+    };
+
+    // Завершённые матчи держим дольше; live — 90 секунд. Это резко снижает расход квоты.
+    cache.set(cacheKey, { data, expiresAt: Date.now() + (LIVE_STATUSES.has(status) ? 90_000 : 60 * 60_000) });
+    return NextResponse.json(data);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Неизвестная ошибка API-Football";
-    return NextResponse.json({ error: message }, { status: 500 });
+    const rateLimited = message.includes("rateLimit") || message.includes("Too many requests");
+    return NextResponse.json({ error: rateLimited ? "API-Football временно ограничил запросы. Квота или лимит запросов исчерпаны — повторим после сброса лимита." : message }, { status: rateLimited ? 429 : 500 });
   }
 }
