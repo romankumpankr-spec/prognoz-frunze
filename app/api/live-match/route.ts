@@ -11,6 +11,7 @@ type ApiFixture = {
     date: string;
     status: { short: string; long: string; elapsed: number | null; extra?: number | null };
   };
+  league: { id: number; season: number };
   teams: { home: { name: string }; away: { name: string } };
   goals: { home: number | null; away: number | null };
   events?: Array<{
@@ -57,8 +58,15 @@ function teamMatches(localName: string, apiName: string) {
 }
 
 function findFixture(fixtures: ApiFixture[], home: string, away: string) {
-  return fixtures.find(f => teamMatches(home, f.teams.home.name) && teamMatches(away, f.teams.away.name))
-    ?? fixtures.find(f => teamMatches(home, f.teams.away.name) && teamMatches(away, f.teams.home.name));
+  return fixtures.find(f =>
+    f.league?.id === UCL_LEAGUE_ID &&
+    teamMatches(home, f.teams.home.name) &&
+    teamMatches(away, f.teams.away.name)
+  ) ?? fixtures.find(f =>
+    f.league?.id === UCL_LEAGUE_ID &&
+    teamMatches(home, f.teams.away.name) &&
+    teamMatches(away, f.teams.home.name)
+  );
 }
 
 async function apiGet(path: string, params: Record<string, string>) {
@@ -92,9 +100,10 @@ export async function GET(request: NextRequest) {
     const nearKickoff = Math.abs(now - kickoffDate.getTime()) <= 4 * 60 * 60 * 1000;
     let fixture: ApiFixture | undefined;
 
-    // Для текущих матчей — один запрос live. Ответ live уже содержит счёт и события.
+    // API-Football принимает live как "all" или список ID в формате id-id.
+    // Надёжнее запрашивать все текущие live-матчи одним запросом и затем оставить только ЛЧ.
     if (nearKickoff) {
-      const live = await apiGet("/fixtures", { live: String(UCL_LEAGUE_ID) });
+      const live = await apiGet("/fixtures", { live: "all" });
       fixture = findFixture((live.response ?? []) as ApiFixture[], home, away);
     }
 
@@ -111,7 +120,6 @@ export async function GET(request: NextRequest) {
 
     if (!fixture) return NextResponse.json({ error: "Матч не найден в API-Football", home, away, date }, { status: 404 });
 
-    // В ответе /fixtures уже есть события; дополнительный запрос /fixtures?ids=... не нужен.
     const status = fixture.fixture.status.short;
     const events = (fixture.events ?? []).map(event => ({
       minute: event.time.elapsed,
@@ -135,7 +143,6 @@ export async function GET(request: NextRequest) {
       updatedAt: new Date().toISOString(),
     };
 
-    // Завершённые матчи держим дольше; live — 90 секунд. Это резко снижает расход квоты.
     cache.set(cacheKey, { data, expiresAt: Date.now() + (LIVE_STATUSES.has(status) ? 90_000 : 60 * 60_000) });
     return NextResponse.json(data);
   } catch (error) {
