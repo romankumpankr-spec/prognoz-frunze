@@ -28,7 +28,7 @@ export function MatchVideo({ url }: Props) {
     </button>
     {open && <div className="match-video-frame">
       <iframe
-        src={`https://www.youtube.com/embed/${encodeURIComponent(videoId)}`}
+        src={`https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}`}
         title="Обзор матча на YouTube"
         loading="lazy"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
