@@ -11,6 +11,14 @@ export type MatchPreviewData = {
   sourceUrl?: string;
 };
 
+export type PreviousTeamStats = {
+  result: string;
+  points: number;
+  gf: number;
+  ga: number;
+  record: string;
+};
+
 const UEFA_STATS = "https://www.uefa.com/uefachampionsleague/news/02a9-2180c6b55c39-54a55373de68-1000--champions-league-matchday-1-key-stats-and-what-to-look-o/";
 const TRANSFERMARKT = "https://www.transfermarkt.com/";
 
@@ -35,23 +43,45 @@ export const MATCH_PREVIEWS: Record<string, MatchPreviewData> = {
   "Комо|Лейпциг": { league: "Италия · Serie A / Германия · Bundesliga", marketValueHome:"€536 млн", marketValueAway:"€493 млн", h2h:["Это первая очная встреча команд."], facts:["Для Комо это первый сезон в истории в турнирах УЕФА.","Комо пропустил меньше всех голов в Серии A в прошлом сезоне — 29.","Лейпциг выиграл только 1 из последних 10 матчей основной стадии Лиги чемпионов."] },
 };
 
-export function MatchPreview({ home, away }: { home: string; away: string }) {
+function getTeamDetails(team: string) {
+  const entry = Object.entries(MATCH_PREVIEWS).find(([key]) => key.split("|").includes(team));
+  if (!entry) return null;
+  const [key, info] = entry;
+  const [home, away] = key.split("|");
+  const leagues = info.league.split(" / ");
+  const isHome = home === team;
+  return { league: isHome ? leagues[0] : leagues[1], marketValue: isHome ? info.marketValueHome : info.marketValueAway };
+}
+
+export function MatchPreview({ home, away, previousHome, previousAway }: { home: string; away: string; previousHome?: PreviousTeamStats; previousAway?: PreviousTeamStats }) {
   const [open, setOpen] = useState(false);
   const info = MATCH_PREVIEWS[`${home}|${away}`];
-  if (!info) return null;
+  const homeDetails = getTeamDetails(home);
+  const awayDetails = getTeamDetails(away);
+  const hasAnyInfo = !!info || !!homeDetails || !!awayDetails || !!previousHome || !!previousAway;
+  if (!hasAnyInfo) return null;
+
+  const league = info?.league ?? `${homeDetails?.league ?? "Лига"} / ${awayDetails?.league ?? "Лига"}`;
+  const marketValueHome = info?.marketValueHome ?? homeDetails?.marketValue ?? "—";
+  const marketValueAway = info?.marketValueAway ?? awayDetails?.marketValue ?? "—";
+
   return <div className="match-preview">
     <button type="button" className="preview-toggle" onClick={() => setOpen(v => !v)}>ℹ️ О матче <span>{open ? "▲" : "▼"}</span></button>
     {open && <div className="preview-content">
-      <div className="preview-league">{info.league}</div>
+      <div className="preview-league">{league}</div>
       <div className="preview-values">
-        <div><span>{home}</span><strong>{info.marketValueHome}</strong></div>
-        <div><span>{away}</span><strong>{info.marketValueAway}</strong></div>
+        <div><span>{home}</span><strong>{marketValueHome}</strong></div>
+        <div><span>{away}</span><strong>{marketValueAway}</strong></div>
       </div>
-      <div className="preview-columns">
+      {(previousHome || previousAway) && <div className="preview-columns">
+        {previousHome && <div><h4>📈 {home} — прошлый тур</h4><ul><li>Результат: <b>{previousHome.result}</b></li><li>Баллы: <b>{previousHome.points}</b></li><li>Мячи: <b>{previousHome.gf}:{previousHome.ga}</b></li><li>Форма: <b>{previousHome.record}</b></li></ul></div>}
+        {previousAway && <div><h4>📈 {away} — прошлый тур</h4><ul><li>Результат: <b>{previousAway.result}</b></li><li>Баллы: <b>{previousAway.points}</b></li><li>Мячи: <b>{previousAway.gf}:{previousAway.ga}</b></li><li>Форма: <b>{previousAway.record}</b></li></ul></div>}
+      </div>}
+      {info && <div className="preview-columns">
         <div><h4>📊 Главное</h4><ul>{info.facts.map((fact, i) => <li key={i}>{fact}</li>)}</ul></div>
         <div><h4>🤝 Последние встречи</h4><ul>{info.h2h.map((item, i) => <li key={i}>{item}</li>)}</ul></div>
-      </div>
-      <div className="preview-source">Статистика: <a href={info.sourceUrl ?? UEFA_STATS} target="_blank" rel="noreferrer">UEFA</a> · Стоимость составов: <a href={TRANSFERMARKT} target="_blank" rel="noreferrer">Transfermarkt</a></div>
+      </div>}
+      <div className="preview-source">Статистика: <a href={info?.sourceUrl ?? UEFA_STATS} target="_blank" rel="noreferrer">UEFA</a> · Стоимость составов: <a href={TRANSFERMARKT} target="_blank" rel="noreferrer">Transfermarkt</a></div>
     </div>}
   </div>;
 }
