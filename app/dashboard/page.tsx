@@ -79,20 +79,10 @@ export default function DashboardPage() {
 
   function previousStats(team: string, currentRoundId: string): PreviousTeamStats | undefined {
     const currentOrder = rounds.find(r=>r.id===currentRoundId)?.sort_order ?? 0;
-    const prior = matches
-      .filter(m => (rounds.find(r=>r.id===m.round_id)?.sort_order ?? 0) < currentOrder && m.home_score !== null && m.away_score !== null && (m.home_team === team || m.away_team === team))
-      .sort((a,b) => new Date(b.kickoff_at).getTime() - new Date(a.kickoff_at).getTime());
+    const prior = matches.filter(m => (rounds.find(r=>r.id===m.round_id)?.sort_order ?? 0) < currentOrder && m.home_score !== null && m.away_score !== null && (m.home_team === team || m.away_team === team)).sort((a,b) => new Date(b.kickoff_at).getTime() - new Date(a.kickoff_at).getTime());
     if (!prior.length) return undefined;
-    const last = prior[0];
-    const home = last.home_team === team;
-    const gf = home ? last.home_score! : last.away_score!;
-    const ga = home ? last.away_score! : last.home_score!;
-    const points = gf > ga ? 3 : gf === ga ? 1 : 0;
-    const result = gf > ga ? "Победа" : gf === ga ? "Ничья" : "Поражение";
-    const record = prior.slice().reverse().map(m => {
-      const h = m.home_team === team; const f = h ? m.home_score! : m.away_score!; const a = h ? m.away_score! : m.home_score!;
-      return f > a ? "В" : f === a ? "Н" : "П";
-    }).join(" · ");
+    const last = prior[0]; const home = last.home_team === team; const gf = home ? last.home_score! : last.away_score!; const ga = home ? last.away_score! : last.home_score!; const points = gf > ga ? 3 : gf === ga ? 1 : 0; const result = gf > ga ? "Победа" : gf === ga ? "Ничья" : "Поражение";
+    const record = prior.slice().reverse().map(m => { const h = m.home_team === team; const f = h ? m.home_score! : m.away_score!; const a = h ? m.away_score! : m.home_score!; return f > a ? "В" : f === a ? "Н" : "П"; }).join(" · ");
     return { result: `${gf}:${ga} — ${result}`, points, gf, ga, record };
   }
 
@@ -111,7 +101,7 @@ export default function DashboardPage() {
       <div className="dashboard-side">
         <section className="card"><h2>🏆 Турнирная таблица</h2>{standings.length===0?<p className="badge">Пока нет участников.</p>:standings.map((s,i)=><div className="standing-row" key={s.user_id}><b>{i+1}</b><span>{s.display_name}</span><b>{s.points} очк.</b></div>)}</section>
         <section className="card board-card"><button type="button" className="board-toggle" onClick={()=>setBoardOpen(v=>!v)} aria-expanded={boardOpen}><span>📋 Общая таблица прогнозов</span><span className="board-chevron">{boardOpen?"▲":"▼"}</span></button>{boardOpen&&<><p className="badge">Видны только участники, которые отправили соответствующий тур.</p>{rounds.length===0?<p className="badge">Туры пока не добавлены.</p>:rounds.map(round=>{const roundMatches=matches.filter(m=>m.round_id===round.id);const roundBoardMatches=Array.from(new Map(board.filter(row=>row.round_id===round.id).map(row=>[row.match_id,row])).values());const latestRoundId=rounds.reduce((latest,r)=>r.sort_order>latest.sort_order?r:latest,rounds[0]).id;const isOpen=boardRoundOpen[round.id]??(round.id===latestRoundId);return <section key={round.id} className="card round-card board-round-card"><button type="button" className="preview-toggle" onClick={()=>setBoardRoundOpen(x=>({...x,[round.id]:!isOpen}))} aria-expanded={isOpen}><span><b>{round.name}</b> <span className="badge">{roundMatches.length} матчей</span></span><span className="round-toggle-right"><span className="badge">Отправили: {boardCount(round.id)}/6</span><span>{isOpen?"▲":"▼"}</span></span></button>{isOpen&&<div className="board-round-content">{roundBoardMatches.length===0?<p className="badge">Пока никто не отправил прогноз за этот тур.</p>:roundBoardMatches.map(match=>{const rows=board.filter(x=>x.match_id===match.match_id);return <div className="board-match" key={match.match_id}><div><b>{match.home_team} — {match.away_team}</b><div className="badge">{formatDate(match.kickoff_at)}{match.home_score!==null&&match.away_score!==null?` · Факт: ${match.home_score}:${match.away_score}`:""}</div></div><div className="board-rows">{rows.map(row=><div className="board-row" key={row.user_id}><span>{row.display_name}</span><strong>{row.predicted_home_score}:{row.predicted_away_score}</strong><span className="badge">{row.points===null?"—":`${row.points} очк.`}</span></div>)}</div></div>})}</div>}</section>})}</>}</section>
-        <section className="card chat-card"><h2>💬 Общий чат</h2><p className="badge">Сообщения появляются в реальном времени у всех участников.</p><div className="chat-messages">{messages.length===0?<p className="badge">Пока сообщений нет. Напишите первым.</p>:messages.map(msg=><div className="chat-message" key={msg.id}><b>{names[msg.user_id]??"Участник"}</b><span>{msg.body}</span></div>)}</div><form className="chat-form" onSubmit={sendMessage}><input className="input" value={message} onChange={e=>setMessage(e.target.value)} placeholder="Напишите сообщение…" maxLength={1000}/><button className="cta" type="submit">Отправить</button></form></section>
+        <section className="card chat-card"><h2>💡 Ваши предложения по улучшению работы сайта</h2><p className="badge">Здесь можно оставить предложения и идеи по улучшению сайта.</p><div className="chat-messages">{messages.length===0?<p className="badge">Пока сообщений нет. Напишите первое предложение.</p>:messages.map(msg=><div className="chat-message" key={msg.id}><b>{names[msg.user_id]??"Участник"}</b><span>{msg.body}</span></div>)}</div><form className="chat-form" onSubmit={sendMessage}><input className="input" value={message} onChange={e=>setMessage(e.target.value)} placeholder="Напишите предложение…" maxLength={1000}/><button className="cta" type="submit">Отправить</button></form></section>
       </div>
     </div>
   </div></main>;
