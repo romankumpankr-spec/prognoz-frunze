@@ -53,12 +53,13 @@ function getTeamDetails(team: string) {
   return { league: isHome ? leagues[0] : leagues[1], marketValue: isHome ? info.marketValueHome : info.marketValueAway };
 }
 
-export function MatchPreview({ home, away, previousHome, previousAway }: { home: string; away: string; previousHome?: PreviousTeamStats; previousAway?: PreviousTeamStats }) {
+type MatchHistory = { name: string; home_team: string; away_team: string; home_score: number | null; away_score: number | null };
+export function MatchPreview({ home, away, previousHome, previousAway, history = [] }: { home: string; away: string; previousHome?: PreviousTeamStats; previousAway?: PreviousTeamStats; history?: MatchHistory[] }) {
   const [open, setOpen] = useState(false);
   const info = MATCH_PREVIEWS[`${home}|${away}`];
   const homeDetails = getTeamDetails(home);
   const awayDetails = getTeamDetails(away);
-  const hasAnyInfo = !!info || !!homeDetails || !!awayDetails || !!previousHome || !!previousAway;
+  const hasAnyInfo = !!info || !!homeDetails || !!awayDetails || !!previousHome || !!previousAway || history.length > 0;
   if (!hasAnyInfo) return null;
 
   const league = info?.league ?? `${homeDetails?.league ?? "Лига"} / ${awayDetails?.league ?? "Лига"}`;
@@ -73,7 +74,7 @@ export function MatchPreview({ home, away, previousHome, previousAway }: { home:
         <div><span>{home}</span><strong>{marketValueHome}</strong></div>
         <div><span>{away}</span><strong>{marketValueAway}</strong></div>
       </div>
-      {(previousHome || previousAway) && <div className="preview-columns">
+      {history.length > 0 && <div><h4>🗓 Матчи команд в предыдущих турах</h4><ul>{history.map((m,i)=><li key={i}><b>{m.name}:</b> {m.home_team} {m.home_score}:{m.away_score} {m.away_team}</li>)}</ul></div>}{(previousHome || previousAway) && <div className="preview-columns">
         {previousHome && <div><h4>📈 {home} — прошлый тур</h4><ul><li>Результат: <b>{previousHome.result}</b></li><li>Баллы: <b>{previousHome.points}</b></li><li>Мячи: <b>{previousHome.gf}:{previousHome.ga}</b></li><li>Форма: <b>{previousHome.record}</b></li></ul></div>}
         {previousAway && <div><h4>📈 {away} — прошлый тур</h4><ul><li>Результат: <b>{previousAway.result}</b></li><li>Баллы: <b>{previousAway.points}</b></li><li>Мячи: <b>{previousAway.gf}:{previousAway.ga}</b></li><li>Форма: <b>{previousAway.record}</b></li></ul></div>}
       </div>}
