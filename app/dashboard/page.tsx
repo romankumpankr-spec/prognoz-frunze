@@ -7,7 +7,6 @@ import { MatchPreview, PreviousTeamStats } from "./match-preview";
 import { MatchVideo } from "./match-video";
 
 type Profile = { display_name: string; role: "player" | "admin" };
-type Message = { id: string; user_id: string; body: string; created_at: string };
 type Round = { id: string; name: string; sort_order: number };
 type Match = { id: string; round_id: string; home_team: string; away_team: string; kickoff_at: string; home_score: number | null; away_score: number | null; youtube_url: string | null };
 type Prediction = { match_id: string; home_score: string; away_score: string; submitted_at: string | null };
@@ -22,32 +21,30 @@ export default function DashboardPage() {
   const [profile, setProfile] = useState<Profile | null>(null); const [userId, setUserId] = useState("");
   const [rounds, setRounds] = useState<Round[]>([]); const [matches, setMatches] = useState<Match[]>([]);
   const [predictions, setPredictions] = useState<Record<string, Prediction>>({}); const [savedDrafts, setSavedDrafts] = useState<Record<string, boolean>>({}); const [results, setResults] = useState<Record<string, PredictionResult>>({});
-  const [messages, setMessages] = useState<Message[]>([]); const [names, setNames] = useState<Record<string, string>>({}); const [standings, setStandings] = useState<Standing[]>([]); const [board, setBoard] = useState<BoardRow[]>([]);
-  const [message, setMessage] = useState(""); const [status, setStatus] = useState(""); const [loadError, setLoadError] = useState(""); const [submittingRound, setSubmittingRound] = useState<string | null>(null); const [boardOpen, setBoardOpen] = useState(false); const [roundOpen, setRoundOpen] = useState<Record<string, boolean>>({}); const [boardRoundOpen, setBoardRoundOpen] = useState<Record<string, boolean>>({});
+  const [standings, setStandings] = useState<Standing[]>([]); const [board, setBoard] = useState<BoardRow[]>([]);
+  const [status, setStatus] = useState(""); const [loadError, setLoadError] = useState(""); const [submittingRound, setSubmittingRound] = useState<string | null>(null); const [boardOpen, setBoardOpen] = useState(false); const [roundOpen, setRoundOpen] = useState<Record<string, boolean>>({}); const [boardRoundOpen, setBoardRoundOpen] = useState<Record<string, boolean>>({});
 
   async function load() {
     const { data: { user } } = await supabase.auth.getUser(); if (!user) { router.replace("/login"); return; }
     setUserId(user.id);
-    const [profileQ, roundsQ, matchesQ, predictionsQ, resultsQ, chatQ, standingsQ, boardQ] = await Promise.all([
+    const [profileQ, roundsQ, matchesQ, predictionsQ, resultsQ, standingsQ, boardQ] = await Promise.all([
       supabase.from("profiles").select("display_name, role").eq("id", user.id).single(),
       supabase.from("rounds").select("id,name,sort_order").order("sort_order"),
       supabase.from("matches").select("id,round_id,home_team,away_team,kickoff_at,home_score,away_score,youtube_url").order("kickoff_at"),
       supabase.from("predictions").select("match_id,home_score,away_score,submitted_at").eq("user_id", user.id),
       supabase.from("prediction_results").select("match_id,points").eq("user_id", user.id),
-      supabase.from("chat_messages").select("id,user_id,body,created_at").order("created_at", { ascending: true }).limit(100),
       supabase.from("standings").select("user_id,display_name,points,scored_matches").order("points", { ascending: false }).order("display_name"),
       supabase.from("submitted_prediction_board").select("match_id,user_id,display_name,predicted_home_score,predicted_away_score,submitted_at,points,home_team,away_team,kickoff_at,home_score,away_score,round_id").order("kickoff_at").order("display_name"),
     ]);
-    const errors = [profileQ.error && `профиль: ${profileQ.error.message}`, roundsQ.error && `туры: ${roundsQ.error.message}`, matchesQ.error && `матчи: ${matchesQ.error.message}`, predictionsQ.error && `прогнозы: ${predictionsQ.error.message}`, resultsQ.error && `результаты: ${resultsQ.error.message}`, chatQ.error && `чат: ${chatQ.error.message}`, standingsQ.error && `таблица: ${standingsQ.error.message}`, boardQ.error && `общая таблица прогнозов: ${boardQ.error.message}`].filter(Boolean) as string[];
+    const errors = [profileQ.error && `профиль: ${profileQ.error.message}`, roundsQ.error && `туры: ${roundsQ.error.message}`, matchesQ.error && `матчи: ${matchesQ.error.message}`, predictionsQ.error && `прогнозы: ${predictionsQ.error.message}`, resultsQ.error && `результаты: ${resultsQ.error.message}`, standingsQ.error && `таблица: ${standingsQ.error.message}`, boardQ.error && `общая таблица прогнозов: ${boardQ.error.message}`].filter(Boolean) as string[];
     setLoadError(errors.join(" | ")); setProfile(profileQ.data ?? null); setRounds(roundsQ.data ?? []); setMatches(matchesQ.data ?? []); setStandings(standingsQ.data ?? []); setBoard(boardQ.data ?? []);
     const map: Record<string, Prediction> = {}; const saved: Record<string, boolean> = {};
     for (const x of predictionsQ.data ?? []) { map[x.match_id] = { match_id:x.match_id, home_score:String(x.home_score), away_score:String(x.away_score), submitted_at:x.submitted_at }; saved[x.match_id] = true; }
     setPredictions(map); setSavedDrafts(saved);
-    const resultMap: Record<string, PredictionResult> = {}; for (const x of resultsQ.data ?? []) resultMap[x.match_id] = x; setResults(resultMap); setMessages(chatQ.data ?? []);
-    const ids = Array.from(new Set((chatQ.data ?? []).map(x => x.user_id))); if (ids.length) { const { data: people } = await supabase.from("profiles").select("id,display_name").in("id", ids); const n: Record<string,string> = {}; for (const person of people ?? []) n[person.id] = person.display_name; setNames(n); }
+    const resultMap: Record<string, PredictionResult> = {}; for (const x of resultsQ.data ?? []) resultMap[x.match_id] = x; setResults(resultMap);
   }
 
-  useEffect(() => { load(); const channel = supabase.channel("public-chat").on("postgres_changes", { event:"INSERT", schema:"public", table:"chat_messages" }, async payload => { const msg=payload.new as Message; setMessages(c=>[...c,msg].slice(-100)); const {data}=await supabase.from("profiles").select("display_name").eq("id",msg.user_id).single(); if(data) setNames(c=>({...c,[msg.user_id]:data.display_name})); }).subscribe(); return ()=>{supabase.removeChannel(channel)}; // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function changePrediction(match: Match, side: "home_score" | "away_score", value: string) {
@@ -72,7 +69,6 @@ export default function DashboardPage() {
     setStatus(error?(error.message||"Не удалось отправить прогнозы."):`Прогнозы за «${round.name}» отправлены. Теперь видны прогнозы участников, которые тоже отправили этот тур.`); if(!error) await load();
   }
 
-  async function sendMessage(e:FormEvent){e.preventDefault();const body=message.trim();if(!body)return;const {error}=await supabase.from("chat_messages").insert({user_id:userId,body});if(!error)setMessage("");}
   async function logout(){await supabase.auth.signOut();router.replace("/");}
   const submittedRound=(roundId:string)=>{const ms=matches.filter(m=>m.round_id===roundId);return ms.length>0&&ms.every(m=>predictions[m.id]?.submitted_at);};
   const boardCount=(roundId:string)=>new Set(board.filter(row=>row.round_id===roundId).map(row=>row.user_id)).size;
@@ -101,7 +97,6 @@ export default function DashboardPage() {
         </section>})}{status&&<p className="status-line">{status}</p>}</section>
       <div className="dashboard-side">
         <section className="card board-card"><button type="button" className="board-toggle" onClick={()=>setBoardOpen(v=>!v)} aria-expanded={boardOpen}><span>📋 Общая таблица прогнозов</span><span className="board-chevron">{boardOpen?"▲":"▼"}</span></button>{boardOpen&&<><p className="badge">Видны только участники, которые отправили соответствующий тур.</p>{rounds.length===0?<p className="badge">Туры пока не добавлены.</p>:rounds.map(round=>{const roundMatches=matches.filter(m=>m.round_id===round.id);const roundBoardMatches=Array.from(new Map(board.filter(row=>row.round_id===round.id).map(row=>[row.match_id,row])).values());const latestRoundId=rounds.reduce((latest,r)=>r.sort_order>latest.sort_order?r:latest,rounds[0]).id;const isOpen=boardRoundOpen[round.id]??(round.id===latestRoundId);return <section key={round.id} className="card round-card board-round-card"><button type="button" className="preview-toggle" onClick={()=>setBoardRoundOpen(x=>({...x,[round.id]:!isOpen}))} aria-expanded={isOpen}><span><b>{round.name}</b> <span className="badge">{roundMatches.length} матчей</span></span><span className="round-toggle-right"><span className="badge">Отправили: {boardCount(round.id)}/6</span><span>{isOpen?"▲":"▼"}</span></span></button>{isOpen&&<div className="board-round-content">{roundBoardMatches.length===0?<p className="badge">Пока никто не отправил прогноз за этот тур.</p>:roundBoardMatches.map(match=>{const rows=board.filter(x=>x.match_id===match.match_id);return <div className="board-match" key={match.match_id}><div><b>{match.home_team} — {match.away_team}</b><div className="badge">{formatDate(match.kickoff_at)}{match.home_score!==null&&match.away_score!==null?` · Факт: ${match.home_score}:${match.away_score}`:""}</div></div><div className="board-rows">{rows.map(row=><div className="board-row" key={row.user_id}><span>{row.display_name}</span><strong>{row.predicted_home_score}:{row.predicted_away_score}</strong><span className="badge">{row.points===null?"—":`${row.points} очк.`}</span></div>)}</div></div>})}</div>}</section>})}</>}</section>
-        <section className="card chat-card"><h2>💡 Ваши предложения по улучшению работы сайта</h2><p className="badge">Здесь можно оставить предложения и идеи по улучшению сайта.</p><div className="chat-messages">{messages.length===0?<p className="badge">Пока сообщений нет. Напишите первое предложение.</p>:messages.map(msg=><div className="chat-message" key={msg.id}><b>{names[msg.user_id]??"Участник"}</b><span>{msg.body}</span></div>)}</div><form className="chat-form" onSubmit={sendMessage}><input className="input" value={message} onChange={e=>setMessage(e.target.value)} placeholder="Напишите предложение…" maxLength={1000}/><button className="cta" type="submit">Отправить</button></form></section>
       </div>
     </div>
   </div></main>;
